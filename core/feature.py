@@ -153,6 +153,7 @@ def get_word_cnt(col_list=['type_name', 'app_des']):
     return pd.DataFrame({'word':list(count.keys()), 'count':list(count.values())})
 
 
+@timed()
 def load_embedding(path_txt, type='gensim'):
     if type=='gensim':
         return load_embedding_gensim(path_txt)

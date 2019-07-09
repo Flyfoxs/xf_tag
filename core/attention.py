@@ -4,11 +4,10 @@ import os
 from core.feature import *
 import keras
 max_words = 0
-
+word2vec_tx, vector_size = './input/mini_tx.kv',  200
 
 @lru_cache()
 def get_word2id():
-    word2vec_tx, vector_size = './input/mini_tx.kv',  200
 
     word_id_vec =  load_embedding(word2vec_tx, type='txt')
 
@@ -26,6 +25,7 @@ def get_label_id():
     id2label = {v: k for k, v in label2id.items()}
     return label2id, id2label
 
+@timed()
 def get_train_test():
     jieba = get_jieba()
     data = get_data()
@@ -47,7 +47,7 @@ def get_train_test():
     #
     # word2id = {l: i for i, l in enumerate(set(word_id_vec.index.values))}
     #word2id = dict( word_id_vec.reset_index().apply(lambda row: (row['word'], row.index), axis=1).values )
-    logger.debug(f'Word length:{len(word2id)}')
+    #logger.debug(f'Word length:{len(word2id)}')
 
 
     #embedding_weights[10]
@@ -74,7 +74,7 @@ def get_train_test():
         if len(sentence) > max_words:
             max_words = len(sentence)
             # logger.debug(f'max_words={max_words}')
-    print(max_words)
+    logger.info(f'max_words={max_words}')
 
 
     from keras.preprocessing.sequence import pad_sequences
@@ -95,7 +95,8 @@ def get_train_test():
     return X, Y, X_test
 
 
-def get_model():
+@timed()
+def get_model(max_words):
     word2id = get_word2id()
     embedding_dim = 100  # The dimension of word embeddings
 
@@ -105,6 +106,8 @@ def get_model():
     word_id_vec = load_embedding(word2vec_tx, type='txt')
     embedding_weights = word_id_vec.iloc[:, -vector_size:].fillna(0).values
     # Word embedding layer
+
+    logger.info(f'Mode Paras:embedding_dim:{embedding_dim}, word2id:{len(word2id)}, max_words:{max_words},vector_size:{vector_size}, embedding_weights:{embedding_weights.shape}')
     embedded_inputs = keras.layers.Embedding(len(word2id),
                                              vector_size,
                                              input_length=max_words,
@@ -142,6 +145,7 @@ def get_model():
 
     # Print model summary
     model.summary()
+    return model
 
 def gen_sub(model:keras.Model, test:pd.DataFrame, sn=0):
     res = model.predict(test)
@@ -157,12 +161,19 @@ def gen_sub(model:keras.Model, test:pd.DataFrame, sn=0):
 
     res['label2'] = res.iloc[:, :id_cnt].idxmax(axis=1)
 
+
+    for col in ['label1','label2']:
+        res[col] = res[col].replace(id2label)
+
     res.index.name = 'id'
     res[['label1', 'label2']].to_csv(f'./output/sub/sub_{sn}.csv')
 
 def train_base():
-    model = get_model()
     X, Y, X_test = get_train_test()
+    max_words = X.shape[1]
+    model = get_model(max_words)
+
+    logger.info(f'get_train_test output: X:{X.shape}, Y:{Y.shape}, X_test:{X_test.shape}')
     for sn in range(5):
         model.fit(X, Y, epochs=2, batch_size=64, validation_split=0.1, shuffle=True)
         gen_sub(model, X_test, sn)
