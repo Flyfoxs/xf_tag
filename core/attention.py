@@ -1,9 +1,13 @@
 import sys
 import os
 
+from sklearn.model_selection import StratifiedKFold
+
+from core.callback import *
+
 from core.feature import *
 import keras
-max_words = 0
+#max_words = 0
 word2vec_tx, vector_size = './input/mini_tx.kv',  200
 
 @lru_cache()
@@ -25,6 +29,7 @@ def get_label_id():
     id2label = {v: k for k, v in label2id.items()}
     return label2id, id2label
 
+@lru_cache()
 @timed()
 def get_train_test():
     jieba = get_jieba()
@@ -68,7 +73,7 @@ def get_train_test():
     X_test = [[word2id[word] for word in sentence if word in word2id] for sentence in input_sentences_test]
 
     # Apply Padding to X
-    global max_words  # maximum number of words in a sentence
+    max_words = 0 # maximum number of words in a sentence
     # Construction of word2id dict
     for sentence in input_sentences_train + input_sentences_test:
         if len(sentence) > max_words:
@@ -86,13 +91,13 @@ def get_train_test():
 
 
     # Convert Y to numpy array
-    Y = keras.utils.to_categorical(Y, num_classes=len(label2id))
+
 
     # Print shapes
     print("Shape of X: {}".format(X.shape))
-    print("Shape of Y: {}".format(Y.shape))
+    #print("Shape of Y: {}".format(Y.shape))
 
-    return X, Y, X_test
+    return pd.DataFrame(X, index=train_data.index), Y, pd.DataFrame(X_test, index=test_data.index)
 
 
 @timed()
@@ -147,6 +152,7 @@ def get_model(max_words):
     model.summary()
     return model
 
+@timed()
 def gen_sub(model:keras.Model, test:pd.DataFrame, sn=0):
     res = model.predict(test)
     label2id, id2label = get_label_id()
@@ -169,14 +175,30 @@ def gen_sub(model:keras.Model, test:pd.DataFrame, sn=0):
     res[['label1', 'label2']].to_csv(f'./output/sub/sub_{sn}.csv')
 
 def train_base():
-    X, Y, X_test = get_train_test()
+    X, y, X_test = get_train_test()
     max_words = X.shape[1]
     model = get_model(max_words)
+    Y_cat = keras.utils.to_categorical(y, num_classes=len(get_app_type_ex()))
+    folds = StratifiedKFold(n_splits=10, shuffle=True, random_state=2019)
+    for train_idx, test_idx  in  folds.split(X.values, y):
 
-    logger.info(f'get_train_test output: X:{X.shape}, Y:{Y.shape}, X_test:{X_test.shape}')
-    for sn in range(5):
-        model.fit(X, Y, epochs=2, batch_size=64, validation_split=0.1, shuffle=True)
-        gen_sub(model, X_test, sn)
+        train_x, train_y, test_x, test_y = \
+            X.iloc[train_idx], Y_cat[train_idx], X.iloc[test_idx], Y_cat[test_idx]
+
+        logger.info(f'get_train_test output: train_x:{train_x.shape}, train_y:{train_y.shape}, test_x:{test_x.shape}')
+        for sn in range(5):
+
+            his = model.fit(train_x, train_y,  validation_data = (test_x, test_y),
+                            epochs=1,  shuffle=True, batch_size=64,
+                            callbacks=Cal_acc(test_x, y[test_idx])
+                      #steps_per_epoch=1000, validation_steps=10
+                      )
+            gen_sub(model, X_test, sn)
+
+            model_path = f'./output/model_{sn}.h5'
+            model.save(model_path)
+            print(f'weight save to {model_path}')
+            break
 
 
 

@@ -202,6 +202,26 @@ def check_word_exist(path_txt='./input/mini_tx.kv'):
 
 
 
+def accuracy(X, y):
+    id_cnt = X.shape[1]
+
+    X['label1'] = X.iloc[:, :id_cnt].idxmax(axis=1)
+
+    for index, col in X.label1.items():
+        X.loc[index, col] = np.nan
+
+    X['label2'] = X.iloc[:, :id_cnt].idxmax(axis=1)
+
+    acc1 = sum(X['label1'] == y) / len(X)
+    acc2 = sum(X['label2'] == y) / len(X)
+
+    return acc1, acc2, acc1+acc2
+
+
+def get_tfidf():
+    pass
+
+
 if __name__ == '__main__':
     app_type = get_app_type_ex().sort_values('type_cnt')
     app_type.head()

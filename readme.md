@@ -15,4 +15,5 @@ sed -i 's/"//g' *.*
 https://github.com/goto456/stopwords
 
 
-#Type_id: 152
+# Type_id Cnt: 
+152
