@@ -19,7 +19,7 @@ class Cal_acc(Callback):
 
         res = pd.DataFrame(res, index=self.X.index)
         acc1, acc2, total = accuracy(res, self.y)
-        logger.info(f'acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, total:{total:6.5f}')
+        logger.info(f'acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
         return acc1, acc2, total
 
 

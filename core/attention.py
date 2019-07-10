@@ -97,7 +97,7 @@ def get_train_test():
     print("Shape of X: {}".format(X.shape))
     #print("Shape of Y: {}".format(Y.shape))
 
-    return pd.DataFrame(X, index=train_data.index), pd.Series(Y), pd.DataFrame(X_test, index=test_data.index)
+    return pd.DataFrame(X, index=train_data.app_id), pd.Series(Y), pd.DataFrame(X_test, index=test_data.app_id)
 
 
 @timed()
@@ -151,13 +151,19 @@ def get_model(max_words):
     # Print model summary
     model.summary()
     return model
-
 @timed()
 def gen_sub(model:keras.Model, test:pd.DataFrame, sn=0):
-    res = model.predict(test)
     label2id, id2label = get_label_id()
-    res = pd.DataFrame(res, columns=label2id.keys(), index=test.index)
 
+    partition_len = 1000
+    res_list = []
+    for sn in tqdm(range(1+ len(test)//partition_len), desc=f'total:{len(test)},partition_len:{partition_len}'):
+        tmp = test.iloc[sn*partition_len: (sn+1)*partition_len]
+        res = model.predict(tmp)
+        res = pd.DataFrame(res, columns=label2id.keys(), index=tmp.index)
+        res_list.append(res)
+
+    res = pd.concat(res_list)
     id_cnt = res.shape[1]
 
     res['label1'] = res.iloc[:, :id_cnt].idxmax(axis=1)
@@ -172,7 +178,10 @@ def gen_sub(model:keras.Model, test:pd.DataFrame, sn=0):
         res[col] = res[col].replace(id2label)
 
     res.index.name = 'id'
-    res[['label1', 'label2']].to_csv(f'./output/sub/sub_{sn}.csv')
+    sub_file = f'./output/sub/sub_{sn}.csv'
+    res[['label1', 'label2']].to_csv(sub_file)
+    logger.info(f'Sub file save to :{sub_file}')
+    return res
 
 def train_base():
     X, y, X_test = get_train_test()
@@ -189,15 +198,18 @@ def train_base():
         for sn in range(5):
 
             his = model.fit(train_x, train_y,  validation_data = (test_x, test_y),
-                            epochs=1,  shuffle=True, batch_size=64,
+                            epochs=8,  shuffle=True, batch_size=64,
                             callbacks=[Cal_acc(test_x, y.iloc[test_idx])]
                       #steps_per_epoch=1000, validation_steps=10
                       )
-            gen_sub(model, X_test, sn)
+
 
             model_path = f'./output/model_{sn}.h5'
             model.save(model_path)
             print(f'weight save to {model_path}')
+
+            gen_sub(model, X_test, sn)
+
             break
 
 

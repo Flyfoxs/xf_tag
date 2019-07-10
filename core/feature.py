@@ -218,9 +218,19 @@ def accuracy(res, y):
     return acc1, acc2, acc1+acc2
 
 
-def get_tfidf():
-    pass
+def get_tfidf(docs):
+    from sklearn.feature_extraction.text import CountVectorizer
+    cv = CountVectorizer(max_df=0.85, stop_words=[',', '[', ']','(', ')'])
+    docs = docs.apply(lambda val: ','.join(val))
+    word_count_vector = cv.fit_transform(docs)
+    list(cv.vocabulary_.keys())[:10]
 
+    from sklearn.feature_extraction.text import TfidfTransformer
+
+    tfidf_transformer = TfidfTransformer(smooth_idf=True, use_idf=True)
+    tf_idf_vector = tfidf_transformer.fit_transform(word_count_vector)
+
+    return pd.SparseDataFrame(tf_idf_vector, columns=cv.get_feature_names())
 
 if __name__ == '__main__':
     app_type = get_app_type_ex().sort_values('type_cnt')
