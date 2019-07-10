@@ -89,6 +89,13 @@ def get_train_test():
 
 
 
+    X = pd.DataFrame(X, index=train_data.app_id)
+    X_test = pd.DataFrame(X_test, index=test_data.app_id)
+
+    data = data.set_index('app_id')
+    tfidf_col = [col for col in data.columns if col.startswith('tfidf_')]
+    X_tfidf = data.loc[train_data.app_id, tfidf_col]
+    X_test_tfidf = data.loc[test_data.app_id, tfidf_col]
 
     # Convert Y to numpy array
 
@@ -97,16 +104,19 @@ def get_train_test():
     print("Shape of X: {}".format(X.shape))
     #print("Shape of Y: {}".format(Y.shape))
 
-    return pd.DataFrame(X, index=train_data.app_id), pd.Series(Y), pd.DataFrame(X_test, index=test_data.app_id)
+    return pd.concat([X,X_tfidf], axis=1) , pd.Series(Y), pd.concat([X_test, X_test_tfidf], axis=1)
 
 
 @timed()
 def get_model(max_words):
+    label2id, id2label = get_label_id()
     word2id = get_word2id()
+    tfidf_features = get_tfidf_type().shape[1]
     embedding_dim = 100  # The dimension of word embeddings
 
     # Define input tensor
     sequence_input = keras.Input(shape=(max_words,), dtype='int32')
+
 
     word_id_vec = load_embedding(word2vec_tx, type='txt')
     embedding_weights = word_id_vec.iloc[:, -vector_size:].fillna(0).values
@@ -131,8 +141,8 @@ def get_model(max_words):
     lstm_outs = keras.layers.Dropout(0.2)(lstm_outs)
 
     # Attention Mechanism - Generate attention vectors
-    input_dim = int(lstm_outs.shape[2])
-    permuted_inputs = keras.layers.Permute((2, 1))(lstm_outs)
+    # input_dim = int(lstm_outs.shape[2])
+    # permuted_inputs = keras.layers.Permute((2, 1))(lstm_outs)
     attention_vector = keras.layers.TimeDistributed(keras.layers.Dense(1))(lstm_outs)
     attention_vector = keras.layers.Reshape((max_words,))(attention_vector)
     attention_vector = keras.layers.Activation('softmax', name='attention_vec')(attention_vector)
@@ -141,8 +151,12 @@ def get_model(max_words):
     # Last layer: fully connected with softmax activation
     fc = keras.layers.Dense(embedding_dim, activation='relu')(attention_output)
 
-    label2id, id2label = get_label_id()
-    output = keras.layers.Dense(len(label2id), activation='softmax')(fc)
+    # New input from tfidf
+    tfidf_input = keras.Input(shape=(tfidf_features,), dtype='float32')
+    dense_tfidf = keras.layers.Dense(len(label2id)*2, activation='relu')(tfidf_input)
+
+    fc_ex = keras.layers.concatenate([dense_tfidf, fc], axis=1)
+    output = keras.layers.Dense(len(label2id), activation='softmax')(fc_ex)
 
     # Finally building model
     model = keras.Model(inputs=[sequence_input], outputs=output)
@@ -196,8 +210,11 @@ def train_base():
 
         logger.info(f'get_train_test output: train_x:{train_x.shape}, train_y:{train_y.shape}, test_x:{test_x.shape}')
         for sn in range(5):
+            input1_col = [col for col in train_x if not col.startswith('tfidf_')]
+            input2_col = [col for col in train_x if col.startswith('tfidf_')]
 
-            his = model.fit(train_x, train_y,  validation_data = (test_x, test_y),
+            his = model.fit([train_x.loc[:, input1_col], train_x.loc[:, input2_col]], train_y,
+                            validation_data = ([test_x.loc[:, input1_col], test_x.loc[:, input2_col]], test_y),
                             epochs=8,  shuffle=True, batch_size=64,
                             callbacks=[Cal_acc(test_x, y.iloc[test_idx])]
                       #steps_per_epoch=1000, validation_steps=10
@@ -219,5 +236,5 @@ if __name__ == '__main__':
     Fire()
 
 """
-    nohup python -u ./core/attention.py train_base > att.log 2>&1 &
+    nohup python -u ./core/attention.py train_base > tf6_2.log 2>&1 &
 """

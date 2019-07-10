@@ -47,7 +47,9 @@ def extend_train_set():
 
     split_res_list = []
     for type_sn in range(apptype_train['type_cnt'].max()):
-        split_res_list.append(split_type_id(todo, type_sn))
+        tmp=split_type_id(todo, type_sn)
+        tmp.app_id = tmp.app_id + f'_{type_sn}'
+        split_res_list.append(tmp)
     split_res = pd.concat(split_res_list)
 
     apptype_train = pd.concat([apptype_train_main, split_res])
@@ -64,8 +66,13 @@ def get_data():
 
     apptype_test = pd.read_csv(f'{input_dir}/app_desc.dat', delimiter='\t', quoting=3, header=None, names=['app_id', 'app_des'], )
 
+
     data = pd.concat([apptype_test, apptype_train], axis=0)
     data = pd.merge(data, apptype, on='type_id', how='left')
+
+    tfidf = get_tfidf_type().add_prefix('tfidf_')
+    data.index = data.app_id
+    data = pd.concat([data, tfidf], axis=1)
     return data.sort_values(['type_cnt'])
 
 
@@ -218,24 +225,52 @@ def accuracy(res, y):
     return acc1, acc2, acc1+acc2
 
 
-def get_tfidf(docs):
-    from sklearn.feature_extraction.text import CountVectorizer
-    cv = CountVectorizer(max_df=0.85, stop_words=[',', '[', ']','(', ')'])
-    docs = docs.apply(lambda val: ','.join(val))
-    word_count_vector = cv.fit_transform(docs)
-    list(cv.vocabulary_.keys())[:10]
+@timed()
+@file_cache()
+def get_tfidf_type():
+    type_ex = get_app_type_ex()
+    feature_name = pd.Series(type_ex.iloc[:, 1:].values.reshape(1, -1)[0]).dropna()
+    tfidf = get_tfidf_all()
 
-    from sklearn.feature_extraction.text import TfidfTransformer
+    feature_missing = [col for col in feature_name if col not in tfidf.columns]
+    logger.warning(f'Feature missing#{len(feature_missing)}:{feature_missing}')
 
-    tfidf_transformer = TfidfTransformer(smooth_idf=True, use_idf=True)
-    tf_idf_vector = tfidf_transformer.fit_transform(word_count_vector)
+    feature_name = [col for col in feature_name if col in tfidf.columns]
+    return tfidf.loc[:, feature_name].fillna(0)
 
-    return pd.SparseDataFrame(tf_idf_vector, columns=cv.get_feature_names())
+@timed()
+@file_cache()
+def get_tfidf_all():
+    with timed_bolck('Gen_ALL_docs'):
+        data = get_data()
+
+        app_docs = get_split_words(data[['app_des']])
+
+        docs = app_docs.jieba_txt.apply(lambda val: ','.join(val))
+
+    with timed_bolck('CountVec'):
+
+        from sklearn.feature_extraction.text import CountVectorizer
+        cv = CountVectorizer(max_df=0.85, stop_words=[',', '[', ']','(', ')'])
+
+        word_count_vector = cv.fit_transform(docs)
+        list(cv.vocabulary_.keys())[:10]
+    with timed_bolck('TFIDF'):
+        from sklearn.feature_extraction.text import TfidfTransformer
+
+        tfidf_transformer = TfidfTransformer(smooth_idf=True, use_idf=True)
+        tf_idf_vector = tfidf_transformer.fit_transform(word_count_vector)
+
+    with timed_bolck('Gen Sparse TFIDF'):
+        df = pd.SparseDataFrame(tf_idf_vector, columns=cv.get_feature_names(), index=data.index)
+
+    return df
 
 if __name__ == '__main__':
-    app_type = get_app_type_ex().sort_values('type_cnt')
-    app_type.head()
+    import fire
+    fire.Fire()
 
 """
+nohup python core/feature.py get_tfidf_all > feature.log 2>&1 &
 
 """
