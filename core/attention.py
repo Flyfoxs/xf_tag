@@ -97,7 +97,7 @@ def get_train_test():
     print("Shape of X: {}".format(X.shape))
     #print("Shape of Y: {}".format(Y.shape))
 
-    return pd.DataFrame(X, index=train_data.index), Y, pd.DataFrame(X_test, index=test_data.index)
+    return pd.DataFrame(X, index=train_data.index), pd.Series(Y), pd.DataFrame(X_test, index=test_data.index)
 
 
 @timed()
@@ -190,7 +190,7 @@ def train_base():
 
             his = model.fit(train_x, train_y,  validation_data = (test_x, test_y),
                             epochs=1,  shuffle=True, batch_size=64,
-                            callbacks=Cal_acc(test_x, y[test_idx])
+                            callbacks=[Cal_acc(test_x, y.iloc[test_idx])]
                       #steps_per_epoch=1000, validation_steps=10
                       )
             gen_sub(model, X_test, sn)

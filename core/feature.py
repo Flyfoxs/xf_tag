@@ -66,7 +66,7 @@ def get_data():
 
     data = pd.concat([apptype_test, apptype_train], axis=0)
     data = pd.merge(data, apptype, on='type_id', how='left')
-    return data
+    return data.sort_values(['type_cnt'])
 
 
 @lru_cache()
@@ -128,7 +128,7 @@ def get_split_words(train):
             train['jieba_txt'] = train['jieba_txt'] + ',' + train.loc[:, col].fillna('')
 
     jieba_txt = train.jieba_txt.apply(lambda text: list(jieba.cut(text, cut_all=False)))
-    jieba_txt = jieba_txt.apply(lambda text: [word for word in text if word not in [' ', ',', ')', '(']])
+    jieba_txt = jieba_txt.apply(lambda text: [word for word in text if word not in [' ', ',', '(', ']', '[', ']']])
 
     jieba_txt = jieba_txt.to_frame()
     #print(jieba_txt.head())
@@ -201,19 +201,19 @@ def check_word_exist(path_txt='./input/mini_tx.kv'):
     return word_df
 
 
+@timed()
+def accuracy(res, y):
+    id_cnt = res.shape[1]
 
-def accuracy(X, y):
-    id_cnt = X.shape[1]
+    res['label1'] = res.iloc[:, :id_cnt].idxmax(axis=1)
 
-    X['label1'] = X.iloc[:, :id_cnt].idxmax(axis=1)
+    for index, col in res.label1.items():
+        res.loc[index, col] = np.nan
 
-    for index, col in X.label1.items():
-        X.loc[index, col] = np.nan
+    res['label2'] = res.iloc[:, :id_cnt].idxmax(axis=1)
 
-    X['label2'] = X.iloc[:, :id_cnt].idxmax(axis=1)
-
-    acc1 = sum(X['label1'] == y) / len(X)
-    acc2 = sum(X['label2'] == y) / len(X)
+    acc1 = sum(res['label1'].values == y.values) / len(res)
+    acc2 = sum(res['label2'].values == y.values) / len(res)
 
     return acc1, acc2, acc1+acc2
 
