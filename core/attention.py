@@ -41,11 +41,12 @@ def get_train_test():
 
     logger.info(f'Train:{train_data.shape} Test:{test_data.shape}')
 
+    with timed_bolck('convrt df to txt'):
 
-    input_sentences_train = [list(jieba.cut(str(text), cut_all=False))  for text in train_data.app_des.values.tolist()]
+        input_sentences_train = [list(jieba.cut(str(text), cut_all=False))  for text in train_data.app_des.values.tolist()]
 
 
-    input_sentences_test = [list(jieba.cut(str(text), cut_all=False))  for text in test_data.app_des.values.tolist()]
+        input_sentences_test = [list(jieba.cut(str(text), cut_all=False))  for text in test_data.app_des.values.tolist()]
 
 
     # word2vec_tx, vector_size = './input/mini_tx.kv',  200
@@ -83,11 +84,10 @@ def get_train_test():
             # logger.debug(f'max_words={max_words}')
     logger.info(f'max_words={max_words}')
 
-
-    from keras.preprocessing.sequence import pad_sequences
-
-    X = pad_sequences(X, max_words)
-    X_test = pad_sequences(X_test, max_words)
+    with timed_bolck('X pad_sequences'):
+        from keras.preprocessing.sequence import pad_sequences
+        X = pad_sequences(X, max_words)
+        X_test = pad_sequences(X_test, max_words)
 
 
 
@@ -173,14 +173,14 @@ def get_model(max_words):
     model.summary()
     return model
 @timed()
-def gen_sub(model:keras.Model, test:pd.DataFrame, info='0'):
+def gen_sub(model:keras.Model, test:pd.DataFrame, info='0', partition_len = 1000):
     label2id, id2label = get_label_id()
     input1_col = [col for col in test.columns if not str(col).startswith('tfidf_')]
     input2_col = [col for col in test.columns if str(col).startswith('tfidf_')]
 
-    partition_len = 1000
+
     res_list = []
-    for sn in tqdm(range(1+ len(test)//partition_len), desc=f'total:{len(test)},partition_len:{partition_len}'):
+    for sn in tqdm(range(1+ len(test)//partition_len), desc=f'sub:total:{len(test)},partition_len:{partition_len}'):
         tmp = test.iloc[sn*partition_len: (sn+1)*partition_len]
         res = model.predict([ tmp.loc[:,input1_col], tmp.loc[:,input2_col] ])
         res = pd.DataFrame(res, columns=label2id.keys(), index=tmp.index)

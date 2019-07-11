@@ -17,16 +17,16 @@ class Cal_acc(Callback):
     def cal_acc(self):
         input1_col = [col for col in self.val_x.columns if not str(col).startswith('tfidf_')]
         input2_col = [col for col in self.val_x.columns if str(col).startswith('tfidf_')]
-        model: keras.Model = self.model
+        model = self.model
         res = model.predict([self.val_x.loc[:,input1_col], self.val_x.loc[:,input2_col]])
 
-        res = pd.DataFrame(res, index=self.input1.index)
+        res = pd.DataFrame(res, index=self.val_x.index)
         acc1, acc2, total = accuracy(res, self.y)
         logger.info(f'acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
 
         if total >=0.1:
             from core.attention import gen_sub
-            gen_sub(model, self.X_test, f'{total:6.5f}' )
+            gen_sub(model, self.X_test, f'{total:6.5f}', partition_len=1000*total )
 
         return acc1, acc2, total
 
