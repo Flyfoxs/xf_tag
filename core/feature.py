@@ -56,9 +56,8 @@ def extend_train_set():
     # apptype_train.type_id = apptype_train.type_id.astype(str)
     return apptype_train
 
-
 @timed()
-def get_data():
+def get_raw_data():
     apptype_train = extend_train_set()
 
     apptype = pd.read_csv(f'{input_dir}/apptype_id_name.txt', delimiter='\t', quoting=3, names=['type_id', 'type_name'],
@@ -70,9 +69,22 @@ def get_data():
     data = pd.concat([apptype_test, apptype_train], axis=0)
     data = pd.merge(data, apptype, on='type_id', how='left')
 
-    tfidf = get_tfidf_type().add_prefix('tfidf_')
+
     data.index = data.app_id
-    data = pd.concat([data, tfidf], axis=1)
+
+    return data.sort_values(['type_cnt'])
+
+@timed()
+def get_data():
+    raw_data = get_raw_data()
+
+    tfidf = get_tfidf_type().add_prefix('tfidf_')
+
+
+    data = pd.concat([raw_data, tfidf], axis=1)
+
+    logger.info(f'Shape of data:{data.shape}, raw_data:{raw_data.shape} tfidf is :{tfidf.shape}')
+
     return data.sort_values(['type_cnt'])
 
 
@@ -148,7 +160,7 @@ def get_split_words(train):
 @file_cache()
 def get_word_cnt(col_list=['type_name', 'app_des']):
 
-    data = get_data()
+    data = get_raw_data()
     jieba_txt= get_split_words(data[col_list])
 
     import collections
@@ -226,14 +238,14 @@ def accuracy(res, y):
 
 
 @timed()
-@file_cache()
 def get_tfidf_type():
+    #TODO need to analysis the missing, and manually split
     type_ex = get_app_type_ex()
-    feature_name = pd.Series(type_ex.iloc[:, 1:].values.reshape(1, -1)[0]).dropna()
+    feature_name = pd.Series(type_ex.iloc[:, 1:].values.reshape(1, -1)[0]).dropna().drop_duplicates()
     tfidf = get_tfidf_all()
 
     feature_missing = [col for col in feature_name if col not in tfidf.columns]
-    logger.warning(f'Feature missing#{len(feature_missing)}:{feature_missing}')
+    #logger.warning(f'Feature missing#{len(feature_missing)}:{feature_missing}')
 
     feature_name = [col for col in feature_name if col in tfidf.columns]
     return tfidf.loc[:, feature_name].fillna(0)
@@ -242,7 +254,7 @@ def get_tfidf_type():
 @file_cache()
 def get_tfidf_all():
     with timed_bolck('Gen_ALL_docs'):
-        data = get_data()
+        data = get_raw_data()
 
         app_docs = get_split_words(data[['app_des']])
 

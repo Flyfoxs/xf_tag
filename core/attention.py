@@ -39,6 +39,8 @@ def get_train_test():
 
     test_data =  data.loc[pd.isna(data.type_id)]
 
+    logger.info(f'Train:{train_data.shape} Test:{test_data.shape}')
+
 
     input_sentences_train = [list(jieba.cut(str(text), cut_all=False))  for text in train_data.app_des.values.tolist()]
 
@@ -89,22 +91,27 @@ def get_train_test():
 
 
 
-    X = pd.DataFrame(X, index=train_data.app_id)
-    X_test = pd.DataFrame(X_test, index=test_data.app_id)
+    X = pd.DataFrame(X, index=train_data.app_id).add_prefix('word_')
+    X_test = pd.DataFrame(X_test, index=test_data).add_prefix('word_')
 
     data = data.set_index('app_id')
     tfidf_col = [col for col in data.columns if col.startswith('tfidf_')]
+    logger.info(f'The tfidf columns:{len(tfidf_col)}, {tfidf_col[:3]} ')
+
     X_tfidf = data.loc[train_data.app_id, tfidf_col]
     X_test_tfidf = data.loc[test_data.app_id, tfidf_col]
 
+    logger.info(f'Before: X:{X.shape}, X_tfidf:{X_tfidf.shape},X_test:{X_test.shape},  X_test_tfidf:{X_test_tfidf.shape}')
+
     # Convert Y to numpy array
 
+    X = pd.concat([X, X_tfidf], axis=1)
+    X_test = pd.concat([X_test, X_test_tfidf], axis=1)
 
-    # Print shapes
-    print("Shape of X: {}".format(X.shape))
-    #print("Shape of Y: {}".format(Y.shape))
+    logger.info(f'After: X:{X.shape}, X_tfidf:{X_tfidf.shape},X_test:{X_test.shape},  X_test_tfidf:{X_test_tfidf.shape}')
 
-    return pd.concat([X,X_tfidf], axis=1) , pd.Series(Y), pd.concat([X_test, X_test_tfidf], axis=1)
+
+    return  X, pd.Series(Y), X_test
 
 
 @timed()
@@ -155,11 +162,11 @@ def get_model(max_words):
     tfidf_input = keras.Input(shape=(tfidf_features,), dtype='float32')
     dense_tfidf = keras.layers.Dense(len(label2id)*2, activation='relu')(tfidf_input)
 
-    fc_ex = keras.layers.concatenate([dense_tfidf, fc], axis=1)
+    fc_ex = keras.layers.concatenate([fc , dense_tfidf], axis=1)
     output = keras.layers.Dense(len(label2id), activation='softmax')(fc_ex)
 
     # Finally building model
-    model = keras.Model(inputs=[sequence_input], outputs=output)
+    model = keras.Model(inputs=[sequence_input, tfidf_input], outputs=output)
     model.compile(loss="categorical_crossentropy", metrics=["accuracy"], optimizer='adam')
 
     # Print model summary
@@ -199,8 +206,12 @@ def gen_sub(model:keras.Model, test:pd.DataFrame, sn=0):
 
 def train_base():
     X, y, X_test = get_train_test()
-    max_words = X.shape[1]
+    input1_col = [col for col in X.columns if not str(col).startswith('tfidf_')]
+    input2_col = [col for col in X.columns if str(col).startswith('tfidf_')]
+    max_words = len(input1_col)
     model = get_model(max_words)
+
+
     Y_cat = keras.utils.to_categorical(y, num_classes=len(get_app_type_ex()))
     folds = StratifiedKFold(n_splits=10, shuffle=True, random_state=2019)
     for train_idx, test_idx  in  folds.split(X.values, y):
@@ -210,10 +221,9 @@ def train_base():
 
         logger.info(f'get_train_test output: train_x:{train_x.shape}, train_y:{train_y.shape}, test_x:{test_x.shape}')
         for sn in range(5):
-            input1_col = [col for col in train_x if not col.startswith('tfidf_')]
-            input2_col = [col for col in train_x if col.startswith('tfidf_')]
-
-            his = model.fit([train_x.loc[:, input1_col], train_x.loc[:, input2_col]], train_y,
+            input1, input2 = train_x.loc[:, input1_col], train_x.loc[:, input2_col]
+            logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
+            his = model.fit([input1, input2], train_y,
                             validation_data = ([test_x.loc[:, input1_col], test_x.loc[:, input2_col]], test_y),
                             epochs=8,  shuffle=True, batch_size=64,
                             callbacks=[Cal_acc(test_x, y.iloc[test_idx])]
