@@ -100,8 +100,16 @@ def get_jieba():
 def get_similar_top(word_list: pd.Series, topn=3):
     wm = load_embedding_gensim(word2vec_tx)
     s = word_list.apply(
-        lambda word: ','.join([k for k, v in wm.most_similar(word, topn=3)]) if word is not None and word in wm else '')
+        lambda word: ','.join([k for k, v in wm.most_similar(word, topn=topn)]) if word is not None and word in wm else '')
     return s.str.split(',', expand=True).add_prefix(f'{word_list.name}_similar_')
+
+
+@timed()
+@file_cache()
+def get_key_word_list( similar_cnt=10 ):
+    df  = pd.read_csv('./input/type_list_jieba.txt', names=['key_words'], header=None).drop_duplicates()
+    similar = get_similar_top(df.key_words, similar_cnt)
+    return pd.concat([df, similar], axis=1)
 
 
 @timed()

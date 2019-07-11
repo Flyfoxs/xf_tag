@@ -31,10 +31,10 @@ def get_label_id():
 
 @lru_cache()
 @timed()
-def get_train_test():
+def get_train_test(frac=1):
     jieba = get_jieba()
     data = get_data()
-    train_data = data.loc[pd.notna(data.type_id)]
+    train_data = data.loc[pd.notna(data.type_id)].sample(frac=frac, random_state=2019)
     labels = train_data.type_id.values.tolist()
 
     test_data =  data.loc[pd.isna(data.type_id)]
@@ -206,8 +206,8 @@ def gen_sub(model:keras.Model, test:pd.DataFrame, info='0', partition_len = 1000
     logger.info(f'Sub file save to :{sub_file}')
     return res
 
-def train_base():
-    X, y, X_test = get_train_test()
+def train_base(frac=1):
+    X, y, X_test = get_train_test(frac)
     input1_col = [col for col in X.columns if not str(col).startswith('tfidf_')]
     input2_col = [col for col in X.columns if str(col).startswith('tfidf_')]
     max_words = len(input1_col)
@@ -233,9 +233,6 @@ def train_base():
                       )
 
 
-            model_path = f'./output/model_{sn}.h5'
-            model.save(model_path)
-            print(f'weight save to {model_path}')
 
             gen_sub(model, X_test, sn)
 
@@ -248,5 +245,7 @@ if __name__ == '__main__':
     Fire()
 
 """
-    nohup python -u ./core/attention.py train_base > tf7.log 2>&1 &
+    nohup python -u ./core/attention.py train_base > tf6.log 2>&1 &
+    
+    nohup python -u ./core/attention.py train_base 0.1 > tf4.log 2>&1 &
 """
