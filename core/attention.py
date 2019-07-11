@@ -173,14 +173,16 @@ def get_model(max_words):
     model.summary()
     return model
 @timed()
-def gen_sub(model:keras.Model, test:pd.DataFrame, sn=0):
+def gen_sub(model:keras.Model, test:pd.DataFrame, info='0'):
     label2id, id2label = get_label_id()
+    input1_col = [col for col in test.columns if not str(col).startswith('tfidf_')]
+    input2_col = [col for col in test.columns if str(col).startswith('tfidf_')]
 
     partition_len = 1000
     res_list = []
     for sn in tqdm(range(1+ len(test)//partition_len), desc=f'total:{len(test)},partition_len:{partition_len}'):
         tmp = test.iloc[sn*partition_len: (sn+1)*partition_len]
-        res = model.predict(tmp)
+        res = model.predict([ tmp.loc[:,input1_col], tmp.loc[:,input2_col] ])
         res = pd.DataFrame(res, columns=label2id.keys(), index=tmp.index)
         res_list.append(res)
 
@@ -199,7 +201,7 @@ def gen_sub(model:keras.Model, test:pd.DataFrame, sn=0):
         res[col] = res[col].replace(id2label)
 
     res.index.name = 'id'
-    sub_file = f'./output/sub/sub_{sn}.csv'
+    sub_file = f'./output/sub/sub_{info}.csv'
     res[['label1', 'label2']].to_csv(sub_file)
     logger.info(f'Sub file save to :{sub_file}')
     return res
@@ -216,17 +218,17 @@ def train_base():
     folds = StratifiedKFold(n_splits=10, shuffle=True, random_state=2019)
     for train_idx, test_idx  in  folds.split(X.values, y):
 
-        train_x, train_y, test_x, test_y = \
+        train_x, train_y, val_x, val_y = \
             X.iloc[train_idx], Y_cat[train_idx], X.iloc[test_idx], Y_cat[test_idx]
 
-        logger.info(f'get_train_test output: train_x:{train_x.shape}, train_y:{train_y.shape}, test_x:{test_x.shape}')
+        logger.info(f'get_train_test output: train_x:{train_x.shape}, train_y:{train_y.shape}, val_x:{val_x.shape}')
         for sn in range(5):
             input1, input2 = train_x.loc[:, input1_col], train_x.loc[:, input2_col]
             logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
             his = model.fit([input1, input2], train_y,
-                            validation_data = ([test_x.loc[:, input1_col], test_x.loc[:, input2_col]], test_y),
+                            validation_data = ([val_x.loc[:, input1_col], val_x.loc[:, input2_col]], val_y),
                             epochs=8,  shuffle=True, batch_size=64,
-                            callbacks=[Cal_acc(test_x, y.iloc[test_idx])]
+                            callbacks=[Cal_acc(val_x, y.iloc[test_idx], X_test)]
                       #steps_per_epoch=1000, validation_steps=10
                       )
 
@@ -246,5 +248,5 @@ if __name__ == '__main__':
     Fire()
 
 """
-    nohup python -u ./core/attention.py train_base > tf6_2.log 2>&1 &
+    nohup python -u ./core/attention.py train_base > tf7.log 2>&1 &
 """
