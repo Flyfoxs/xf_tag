@@ -29,7 +29,7 @@ def get_label_id():
     id2label = {v: k for k, v in label2id.items()}
     return label2id, id2label
 
-@lru_cache()
+#@lru_cache()
 @timed()
 def get_train_test(frac=1):
     jieba = get_jieba()
@@ -37,16 +37,16 @@ def get_train_test(frac=1):
     train_data = data.loc[pd.notna(data.type_id)].sample(frac=frac, random_state=2019)
     labels = train_data.type_id.values.tolist()
 
-    test_data =  data.loc[pd.isna(data.type_id)]
+    test_data =  data.loc[pd.isna(data.type_id)].sample(frac=frac, random_state=2019)
 
-    logger.info(f'Train:{train_data.shape} Test:{test_data.shape}')
+    logger.info(f'Train:{train_data.shape} Test:{test_data.shape}, frac:{frac}')
 
     with timed_bolck('convrt df to txt'):
 
-        input_sentences_train = [list(jieba.cut(str(text), cut_all=False))  for text in train_data.app_des.values.tolist()]
+        input_sentences_train = [list(jieba.cut(str(text), cut_all=True))  for text in train_data.app_des.values.tolist()]
 
 
-        input_sentences_test = [list(jieba.cut(str(text), cut_all=False))  for text in test_data.app_des.values.tolist()]
+        input_sentences_test = [list(jieba.cut(str(text), cut_all=True))  for text in test_data.app_des.values.tolist()]
 
 
     # word2vec_tx, vector_size = './input/mini_tx.kv',  200
@@ -91,8 +91,8 @@ def get_train_test(frac=1):
 
 
 
-    X = pd.DataFrame(X, index=train_data.app_id).add_prefix('word_')
-    X_test = pd.DataFrame(X_test, index=test_data).add_prefix('word_')
+    X      = pd.DataFrame(X, index=train_data.app_id).add_prefix('word_')
+    X_test = pd.DataFrame(X_test, index=test_data.app_id).add_prefix('word_')
 
     data = data.set_index('app_id')
     tfidf_col = [col for col in data.columns if col.startswith('tfidf_')]
@@ -180,7 +180,7 @@ def gen_sub(model:keras.Model, test:pd.DataFrame, info='0', partition_len = 1000
 
 
     res_list = []
-    for sn in tqdm(range(1+ len(test)//partition_len), desc=f'sub:total:{len(test)},partition_len:{partition_len}'):
+    for sn in tqdm(range(1+ len(test)//partition_len), desc=f'{info}:sub:total:{len(test)},partition_len:{partition_len}'):
         tmp = test.iloc[sn*partition_len: (sn+1)*partition_len]
         res = model.predict([ tmp.loc[:,input1_col], tmp.loc[:,input2_col] ])
         res = pd.DataFrame(res, columns=label2id.keys(), index=tmp.index)
@@ -221,7 +221,7 @@ def train_base(frac=1):
         train_x, train_y, val_x, val_y = \
             X.iloc[train_idx], Y_cat[train_idx], X.iloc[test_idx], Y_cat[test_idx]
 
-        logger.info(f'get_train_test output: train_x:{train_x.shape}, train_y:{train_y.shape}, val_x:{val_x.shape}')
+        logger.info(f'get_train_test output: train_x:{train_x.shape}, train_y:{train_y.shape}, val_x:{val_x.shape}, X_test:{X_test.shape}')
         for sn in range(5):
             input1, input2 = train_x.loc[:, input1_col], train_x.loc[:, input2_col]
             logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
@@ -247,5 +247,5 @@ if __name__ == '__main__':
 """
     nohup python -u ./core/attention.py train_base > tf6.log 2>&1 &
     
-    nohup python -u ./core/attention.py train_base 0.1 > tf4.log 2>&1 &
+    nohup python -u ./core/attention.py train_base 0.1 > cut_all.log 2>&1 &
 """

@@ -106,7 +106,7 @@ def get_similar_top(word_list: pd.Series, topn=3):
 
 @timed()
 @file_cache()
-def get_key_word_list( similar_cnt=10 ):
+def get_key_word_list(similar_cnt=10):
     df  = pd.read_csv('./input/type_list_jieba.txt', names=['key_words'], header=None).drop_duplicates()
     similar = get_similar_top(df.key_words, similar_cnt)
     return pd.concat([df, similar], axis=1)
@@ -154,7 +154,7 @@ def get_split_words(train):
         if col != 'jieba_txt':
             train['jieba_txt'] = train['jieba_txt'] + ',' + train.loc[:, col].fillna('')
 
-    jieba_txt = train.jieba_txt.apply(lambda text: list(jieba.cut(text, cut_all=False)))
+    jieba_txt = train.jieba_txt.apply(lambda text: list(jieba.cut(text, cut_all=True)))
     jieba_txt = jieba_txt.apply(lambda text: [word for word in text if word not in [' ', ',', '(', ']', '[', ']']])
 
     jieba_txt = jieba_txt.to_frame()
@@ -166,15 +166,20 @@ def get_split_words(train):
 
 @timed()
 @file_cache()
-def get_word_cnt(col_list=['type_name', 'app_des']):
+def get_word_cnt():
 
-    data = get_raw_data()
-    jieba_txt= get_split_words(data[col_list])
-
+    #Type Name
     import collections
     count = collections.Counter()
+    word_list = get_key_word_list()
+    word_list = pd.Series(word_list.values.reshape(1, -1)[0]).dropna().drop_duplicates()
+    for word in tqdm(word_list, desc='type & similar'):
+        count[word.lower()] += 1
 
-    for text in tqdm(jieba_txt['jieba_txt'].values, desc="split to count"):
+
+    data = get_raw_data()
+    jieba_txt= get_split_words(data[['app_des']])
+    for text in tqdm(jieba_txt['jieba_txt'].values, desc="split docs"):
         for word in text:
             count[word.lower()] += 1
     return pd.DataFrame({'word':list(count.keys()), 'count':list(count.values())})
@@ -218,14 +223,14 @@ def load_embedding_gensim(path_txt):
     wv_from_text = KeyedVectors.load_word2vec_format(path_txt, binary=False)
     return wv_from_text
 
-@timed()
-@lru_cache()
-def check_word_exist(path_txt='./input/mini_tx.kv'):
-    word_df = get_word_cnt()
-    embed = load_embedding(path_txt)
-    word_df['exist'] = word_df.word.apply(lambda val: 1 if val in embed.index.values else 0)
-
-    return word_df
+# @timed()
+# @lru_cache()
+# def check_word_exist(path_txt='./input/mini_tx.kv'):
+#     word_df = get_word_cnt()
+#     embed = load_embedding(path_txt)
+#     word_df['exist'] = word_df.word.apply(lambda val: 1 if val in embed.index.values else 0)
+#
+#     return word_df
 
 
 @timed()
@@ -244,14 +249,15 @@ def accuracy(res, y):
 
     return acc1, acc2, acc1+acc2
 
-
+@lru_cache()
 @timed()
 def get_tfidf_type():
     #TODO need to analysis the missing, and manually split
-    type_ex = get_app_type_ex()
-    feature_name = pd.Series(type_ex.iloc[:, 1:].values.reshape(1, -1)[0]).dropna().drop_duplicates()
+
     tfidf = get_tfidf_all()
 
+    word_list = get_key_word_list()
+    feature_name = pd.Series(word_list.values.reshape(1, -1)[0]).dropna().drop_duplicates()
     feature_missing = [col for col in feature_name if col not in tfidf.columns]
     #logger.warning(f'Feature missing#{len(feature_missing)}:{feature_missing}')
 

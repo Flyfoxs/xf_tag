@@ -44,6 +44,7 @@ def wordVec(word,wv_from_text:dict,min_n = 1, max_n = 3):
     if word in wv_from_text.index:
         return wv_from_text.loc[word]
     else:
+        logger.warning(f'Cannot find this word directly:{word}')
         word_size = vector_size
         # 计算word的ngrams词组
         ngrams = compute_ngrams(word,min_n = min_n, max_n = max_n)
@@ -97,7 +98,7 @@ def gen_tx_mini():
 
     from core.feature import load_embedding, get_word_cnt
 
-    embed = load_embedding(word2vec_tx)
+    embed = load_embedding(word2vec_tx, type='txt')
     word_list = get_word_cnt()
     logger.info(word_list[:5])
     data = gen_mini_embedding(embed, word_list.word.values)

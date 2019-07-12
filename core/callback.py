@@ -48,11 +48,11 @@ class Cal_acc(Callback):
         self.model.save(model_path)
         print(f'weight save to {model_path}')
 
-        if total >=0.5:
+        if total >=0.6:
             from core.attention import gen_sub
             gen_sub(self.model, self.X_test,
                     f'{self.feature_len}_{self.batch_id}_{epoch}_{total:6.5f}',
-                    partition_len=1000*total )
+                    partition_len=int(1000*total) )
 
         return round(total, 5)
 
