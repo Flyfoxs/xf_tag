@@ -5,7 +5,7 @@
 5)include(total, partial)
 6)app type_name,分大组
 7)从desc 过滤相似词
-
+8)n-gram 去除?
 
 
 99998 app_desc.dat

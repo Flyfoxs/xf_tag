@@ -74,18 +74,26 @@ def get_raw_data():
 
     return data.sort_values(['type_cnt'])
 
-
+@lru_cache()
+def get_label_id():
+    app_type  = get_app_type_ex()
+    labels = app_type.type_id.values.tolist()
+    # Construction of label2id and id2label dicts
+    label2id = {l: i for i, l in enumerate(set(labels))}
+    id2label = {v: k for k, v in label2id.items()}
+    return label2id, id2label
 
 @timed()
 def get_data():
     raw_data = get_raw_data()
 
-    tfidf = get_feature_manual()
+    manual = get_feature_manual()
 
+    seq = get_feature_seq_input_sentences()
 
-    data = pd.concat([raw_data, tfidf], axis=1)
+    data = pd.concat([raw_data, seq, manual, ], axis=1)
 
-    logger.info(f'Shape of data:{data.shape}, raw_data:{raw_data.shape} tfidf is :{tfidf.shape}')
+    logger.info(f'Shape of data:{data.shape}, raw_data:{raw_data.shape} manual:{manual.shape}, seq:{seq.shape} ')
 
     return data.sort_values(['type_cnt'])
 
@@ -252,8 +260,9 @@ def accuracy(res, y):
     return acc1, acc2, acc1+acc2
 
 
-@lru_cache()
+
 @timed()
+@file_cache()
 def get_feature_manual(n_topics=10):
     tfidf = get_feature_tfidf_type()
     #return tfidf
@@ -304,8 +313,43 @@ def get_tfidf_all():
 
     return df
 
+@lru_cache()
+def get_word2id():
+
+    word_id_vec =  load_embedding(word2vec_tx, type='txt')
+
+    word2id = {l: i for i, l in enumerate(set(word_id_vec.index.values))}
+
+    return word2id
+
 @file_cache()
 @timed()
+def get_feature_seq_input_sentences():
+    data = get_raw_data()
+    with timed_bolck('for df cut txt to words'):
+        jieba = get_jieba()
+        input_sentences = [list(jieba.cut(str(text), cut_all=True))  for text in data.app_des.values.tolist()]
+
+    word2id = get_word2id()
+
+    # Encode input words and labels
+    X = [[word2id[word] for word in sentence if word in word2id] for sentence in input_sentences]
+    max_words = 0 # maximum number of words in a sentence
+    # Construction of word2id dict
+    for sentence in input_sentences:
+        if len(sentence) > max_words:
+            max_words = len(sentence)
+            # logger.debug(f'max_words={max_words}')
+    logger.info(f'max_words={max_words}')
+
+    with timed_bolck('X pad_sequences'):
+        from keras.preprocessing.sequence import pad_sequences
+        X = pad_sequences(X, max_words)
+
+    return pd.DataFrame(X, index=data.app_id).add_prefix('seq_')
+
+@timed()
+@file_cache()
 def get_feature_lda(n_topics):
     from sklearn.feature_extraction.text import CountVectorizer
     from sklearn.decomposition import LatentDirichletAllocation
@@ -331,6 +375,7 @@ def get_feature_lda(n_topics):
         docres = lda.fit_transform(cntTf)
 
     return pd.DataFrame(docres, columns=[f'fea_lda_{i}' for i in range(n_topics)], index=data.index)
+
 
 
 if __name__ == '__main__':

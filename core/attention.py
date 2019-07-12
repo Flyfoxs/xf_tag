@@ -8,31 +8,13 @@ from core.callback import *
 from core.feature import *
 import keras
 #max_words = 0
-word2vec_tx, vector_size = './input/mini_tx.kv',  200
-
-@lru_cache()
-def get_word2id():
-
-    word_id_vec =  load_embedding(word2vec_tx, type='txt')
-
-    word2id = {l: i for i, l in enumerate(set(word_id_vec.index.values))}
-
-    return word2id
-
-
-@lru_cache()
-def get_label_id():
-    app_type  = get_app_type_ex()
-    labels = app_type.type_id.values.tolist()
-    # Construction of label2id and id2label dicts
-    label2id = {l: i for i, l in enumerate(set(labels))}
-    id2label = {v: k for k, v in label2id.items()}
-    return label2id, id2label
+word2vec_tx_mini, vector_size = './input/mini_tx.kv',  200
 
 #@lru_cache()
+
 @timed()
 def get_train_test(frac=1):
-    jieba = get_jieba()
+
     data = get_data()
     train_data = data.loc[pd.notna(data.type_id)].sample(frac=frac, random_state=2019)
     labels = train_data.type_id.values.tolist()
@@ -41,77 +23,20 @@ def get_train_test(frac=1):
 
     logger.info(f'Train:{train_data.shape} Test:{test_data.shape}, frac:{frac}')
 
-    with timed_bolck('for df cut txt to words'):
-
-        input_sentences_train = [list(jieba.cut(str(text), cut_all=True))  for text in train_data.app_des.values.tolist()]
-
-
-        input_sentences_test = [list(jieba.cut(str(text), cut_all=True))  for text in test_data.app_des.values.tolist()]
-
-
-    # word2vec_tx, vector_size = './input/mini_tx.kv',  200
-    #
-    #
-    #
-    # word2id = {l: i for i, l in enumerate(set(word_id_vec.index.values))}
-    #word2id = dict( word_id_vec.reset_index().apply(lambda row: (row['word'], row.index), axis=1).values )
-    #logger.debug(f'Word length:{len(word2id)}')
-
-
-    #embedding_weights[10]
-
-    # Initialize word2id and label2id dictionaries that will be used to encode words and labels
-
-
-    # id2label
+    feature_col = [col for col in data.columns if col.startswith('fea_') or col.startswith('seq_')]
 
     label2id, id2label = get_label_id()
     word2id = get_word2id()
 
     # Encode input words and labels
-    X = [[word2id[word] for word in sentence if word in word2id] for sentence in input_sentences_train]
+    X = train_data.loc[:, feature_col]
     Y = [label2id[label] for label in labels]
 
 
-    X_test = [[word2id[word] for word in sentence if word in word2id] for sentence in input_sentences_test]
-
-    # Apply Padding to X
-    max_words = 0 # maximum number of words in a sentence
-    # Construction of word2id dict
-    for sentence in input_sentences_train + input_sentences_test:
-        if len(sentence) > max_words:
-            max_words = len(sentence)
-            # logger.debug(f'max_words={max_words}')
-    logger.info(f'max_words={max_words}')
-
-    with timed_bolck('X pad_sequences'):
-        from keras.preprocessing.sequence import pad_sequences
-        X = pad_sequences(X, max_words)
-        X_test = pad_sequences(X_test, max_words)
+    X_test = test_data.loc[:, feature_col]
 
 
-
-    X      = pd.DataFrame(X, index=train_data.app_id).add_prefix('word_')
-    X_test = pd.DataFrame(X_test, index=test_data.app_id).add_prefix('word_')
-
-    data = data.set_index('app_id')
-    manual_col = [col for col in data.columns if col.startswith('fea_')]
-    #logger.info(f'The tfidf columns:{len(manual_col)}, {manual_col[:3]} ')
-
-    X_manual = data.loc[train_data.app_id, manual_col]
-    X_test_manual = data.loc[test_data.app_id, manual_col]
-
-    logger.info(f'Before: X:{X.shape}, X_manual:{X_manual.shape},X_test:{X_test.shape},  X_test_manual:{X_test_manual.shape}')
-
-    # Convert Y to numpy array
-
-    X = pd.concat([X, X_manual], axis=1)
-    X_test = pd.concat([X_test, X_test_manual], axis=1)
-
-    logger.info(f'After: X:{X.shape}, X_manual:{X_manual.shape},X_test:{X_test.shape},  X_test_manual:{X_test_manual.shape}')
-
-
-    return  X, pd.Series(Y), X_test
+    return  X, pd.Series(Y, index=train_data.index), X_test
 
 
 @timed()
@@ -125,7 +50,7 @@ def get_model(max_words):
     sequence_input = keras.Input(shape=(max_words,), dtype='int32')
 
 
-    word_id_vec = load_embedding(word2vec_tx, type='txt')
+    word_id_vec = load_embedding(word2vec_tx_mini, type='txt')
     embedding_weights = word_id_vec.iloc[:, -vector_size:].fillna(0).values
     # Word embedding layer
 
@@ -178,7 +103,7 @@ def get_model(max_words):
 def gen_sub(model_path , partition_len = 1000):
     info = model_path.split('/')[-1]
     from keras.models import load_model
-    model: keras.Model =  load_model(model_path)
+    model =  load_model(model_path)
     _, _, test = get_train_test()
 
     label2id, id2label = get_label_id()
@@ -211,7 +136,7 @@ def gen_sub(model_path , partition_len = 1000):
     sub_file = f'./output/sub/sub_{info}.csv'
     res[['label1', 'label2']].to_csv(sub_file)
     logger.info(f'Sub file save to :{sub_file}')
-    return res
+    return sub_file
 
 def train_base(frac=1):
     X, y, X_test = get_train_test(frac)
@@ -220,7 +145,7 @@ def train_base(frac=1):
     max_words = len(input1_col)
     model = get_model(max_words)
 
-    get_feature_manual.cache_clear()
+    #get_feature_manual.cache_clear()
     Y_cat = keras.utils.to_categorical(y, num_classes=len(get_app_type_ex()))
     folds = StratifiedKFold(n_splits=10, shuffle=True, random_state=2019)
     for train_idx, test_idx  in  folds.split(X.values, y):
@@ -254,7 +179,7 @@ if __name__ == '__main__':
 """
     nohup python -u ./core/attention.py train_base > tf6.log 2>&1 &
     
-    #nohup python -u ./core/attention.py train_base 0.1 > lda.log 2>&1 &
+    #nohup python -u ./core/attention.py train_base   > lda.log 2>&1 &
     
     nohup python -u ./core/attention.py train_base  > cut_all_0.65.log 2>&1 &
     

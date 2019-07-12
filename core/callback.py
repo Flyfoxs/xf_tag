@@ -49,15 +49,13 @@ class Cal_acc(Callback):
             self.model.save(model_path)
             print(f'weight save to {model_path}')
 
-        # threshold = 0.7
-        # if total >=threshold:
-        #     logger.info(f'Try to gen sub file for local score:{total}')
-        #     from core.attention import gen_sub
-        #     gen_sub(self.model, self.X_test,
-        #             f'{self.feature_len}_{self.batch_id}_{epoch}_{total:6.5f}',
-        #             partition_len=int(1000*total) )
-        # else:
-        #     logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
+        threshold = 0.7
+        if total >=threshold:
+            logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
+            from core.attention import gen_sub
+            gen_sub(model_path)
+        else:
+            logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
 
 
         return round(total, 5)
