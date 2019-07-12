@@ -74,11 +74,13 @@ def get_raw_data():
 
     return data.sort_values(['type_cnt'])
 
+
+
 @timed()
 def get_data():
     raw_data = get_raw_data()
 
-    tfidf = get_tfidf_type().add_prefix('tfidf_')
+    tfidf = get_feature_manual()
 
 
     data = pd.concat([raw_data, tfidf], axis=1)
@@ -249,9 +251,19 @@ def accuracy(res, y):
 
     return acc1, acc2, acc1+acc2
 
+
 @lru_cache()
 @timed()
-def get_tfidf_type():
+def get_feature_manual(n_topics=10):
+    tfidf = get_feature_tfidf_type()
+    #return tfidf
+    lda = get_feature_lda(n_topics)
+    return pd.concat([tfidf,lda], axis=1)
+
+
+#@lru_cache()
+@timed()
+def get_feature_tfidf_type():
     #TODO need to analysis the missing, and manually split
 
     tfidf = get_tfidf_all()
@@ -262,7 +274,7 @@ def get_tfidf_type():
     #logger.warning(f'Feature missing#{len(feature_missing)}:{feature_missing}')
 
     feature_name = [col for col in feature_name if col in tfidf.columns]
-    return tfidf.loc[:, feature_name].fillna(0)
+    return tfidf.loc[:, feature_name].fillna(0).add_prefix('fea_tfidf_')
 
 @timed()
 @file_cache()
@@ -292,11 +304,40 @@ def get_tfidf_all():
 
     return df
 
+@file_cache()
+@timed()
+def get_feature_lda(n_topics):
+    from sklearn.feature_extraction.text import CountVectorizer
+    from sklearn.decomposition import LatentDirichletAllocation
+
+    with timed_bolck('Gen_ALL_docs'):
+        data = get_raw_data()
+
+        app_docs = get_split_words(data[['app_des']])
+
+        docs = app_docs.jieba_txt.apply(lambda val: ','.join(val))
+
+    with timed_bolck('CountVec'):
+
+        from sklearn.feature_extraction.text import CountVectorizer
+        cv = CountVectorizer(max_df=0.85, stop_words=[',', '[', ']','(', ')'])
+        cntTf = cv.fit_transform(docs)
+
+    with timed_bolck('Cal LDA'):
+
+        lda = LatentDirichletAllocation(n_components=n_topics,
+                                        learning_offset=50.,
+                                        random_state=666)
+        docres = lda.fit_transform(cntTf)
+
+    return pd.DataFrame(docres, columns=[f'fea_lda_{i}' for i in range(n_topics)], index=data.index)
+
+
 if __name__ == '__main__':
     import fire
     fire.Fire()
 
 """
-nohup python core/feature.py get_tfidf_all > feature.log 2>&1 &
+nohup python core/feature.py get_feature_lda 20 > feature.log 2>&1 &
 
 """

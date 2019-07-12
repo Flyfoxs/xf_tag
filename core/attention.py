@@ -41,7 +41,7 @@ def get_train_test(frac=1):
 
     logger.info(f'Train:{train_data.shape} Test:{test_data.shape}, frac:{frac}')
 
-    with timed_bolck('convrt df to txt'):
+    with timed_bolck('for df cut txt to words'):
 
         input_sentences_train = [list(jieba.cut(str(text), cut_all=True))  for text in train_data.app_des.values.tolist()]
 
@@ -95,20 +95,20 @@ def get_train_test(frac=1):
     X_test = pd.DataFrame(X_test, index=test_data.app_id).add_prefix('word_')
 
     data = data.set_index('app_id')
-    tfidf_col = [col for col in data.columns if col.startswith('tfidf_')]
-    logger.info(f'The tfidf columns:{len(tfidf_col)}, {tfidf_col[:3]} ')
+    manual_col = [col for col in data.columns if col.startswith('fea_')]
+    #logger.info(f'The tfidf columns:{len(manual_col)}, {manual_col[:3]} ')
 
-    X_tfidf = data.loc[train_data.app_id, tfidf_col]
-    X_test_tfidf = data.loc[test_data.app_id, tfidf_col]
+    X_manual = data.loc[train_data.app_id, manual_col]
+    X_test_manual = data.loc[test_data.app_id, manual_col]
 
-    logger.info(f'Before: X:{X.shape}, X_tfidf:{X_tfidf.shape},X_test:{X_test.shape},  X_test_tfidf:{X_test_tfidf.shape}')
+    logger.info(f'Before: X:{X.shape}, X_manual:{X_manual.shape},X_test:{X_test.shape},  X_test_manual:{X_test_manual.shape}')
 
     # Convert Y to numpy array
 
-    X = pd.concat([X, X_tfidf], axis=1)
-    X_test = pd.concat([X_test, X_test_tfidf], axis=1)
+    X = pd.concat([X, X_manual], axis=1)
+    X_test = pd.concat([X_test, X_test_manual], axis=1)
 
-    logger.info(f'After: X:{X.shape}, X_tfidf:{X_tfidf.shape},X_test:{X_test.shape},  X_test_tfidf:{X_test_tfidf.shape}')
+    logger.info(f'After: X:{X.shape}, X_manual:{X_manual.shape},X_test:{X_test.shape},  X_test_manual:{X_test_manual.shape}')
 
 
     return  X, pd.Series(Y), X_test
@@ -118,7 +118,7 @@ def get_train_test(frac=1):
 def get_model(max_words):
     label2id, id2label = get_label_id()
     word2id = get_word2id()
-    tfidf_features = get_tfidf_type().shape[1]
+    manual_features = get_feature_manual().shape[1]
     embedding_dim = 100  # The dimension of word embeddings
 
     # Define input tensor
@@ -158,27 +158,34 @@ def get_model(max_words):
     # Last layer: fully connected with softmax activation
     fc = keras.layers.Dense(embedding_dim, activation='relu')(attention_output)
 
-    # New input from tfidf
-    tfidf_input = keras.Input(shape=(tfidf_features,), dtype='float32')
-    dense_tfidf = keras.layers.Dense(len(label2id)*2, activation='relu')(tfidf_input)
+    # New input from manual
+    manual_input = keras.Input(shape=(manual_features,), dtype='float32')
+    dense_manual = keras.layers.Dense(len(label2id)*2, activation='relu')(manual_input)
 
-    fc_ex = keras.layers.concatenate([fc , dense_tfidf], axis=1)
+    fc_ex = keras.layers.concatenate([fc , dense_manual], axis=1)
     output = keras.layers.Dense(len(label2id), activation='softmax')(fc_ex)
 
     # Finally building model
-    model = keras.Model(inputs=[sequence_input, tfidf_input], outputs=output)
+    model = keras.Model(inputs=[sequence_input, manual_input], outputs=output)
     model.compile(loss="categorical_crossentropy", metrics=["accuracy"], optimizer='adam')
 
     # Print model summary
     model.summary()
     return model
+
 @timed()
-def gen_sub(model:keras.Model, test:pd.DataFrame, info='0', partition_len = 1000):
+#./output/model/1562899782/model_6114_0.65403_2.h5
+def gen_sub(model_path , partition_len = 1000):
+    info = model_path.split('/')[-1]
+    from keras.models import load_model
+    model: keras.Model =  load_model(model_path)
+    _, _, test = get_train_test()
+
     label2id, id2label = get_label_id()
-    input1_col = [col for col in test.columns if not str(col).startswith('tfidf_')]
-    input2_col = [col for col in test.columns if str(col).startswith('tfidf_')]
+    input1_col = [col for col in test.columns if not str(col).startswith('fea_')]
+    input2_col = [col for col in test.columns if str(col).startswith('fea_')]
 
-
+    logger.info(f'Input input1_col:{len(input1_col)}, input2_col:{len(input2_col)}')
     res_list = []
     for sn in tqdm(range(1+ len(test)//partition_len), desc=f'{info}:sub:total:{len(test)},partition_len:{partition_len}'):
         tmp = test.iloc[sn*partition_len: (sn+1)*partition_len]
@@ -208,12 +215,12 @@ def gen_sub(model:keras.Model, test:pd.DataFrame, info='0', partition_len = 1000
 
 def train_base(frac=1):
     X, y, X_test = get_train_test(frac)
-    input1_col = [col for col in X.columns if not str(col).startswith('tfidf_')]
-    input2_col = [col for col in X.columns if str(col).startswith('tfidf_')]
+    input1_col = [col for col in X.columns if not str(col).startswith('fea_')]
+    input2_col = [col for col in X.columns if str(col).startswith('fea_')]
     max_words = len(input1_col)
     model = get_model(max_words)
 
-
+    get_feature_manual.cache_clear()
     Y_cat = keras.utils.to_categorical(y, num_classes=len(get_app_type_ex()))
     folds = StratifiedKFold(n_splits=10, shuffle=True, random_state=2019)
     for train_idx, test_idx  in  folds.split(X.values, y):
@@ -234,7 +241,7 @@ def train_base(frac=1):
 
 
 
-            gen_sub(model, X_test, sn)
+            #gen_sub(model, X_test, sn)
 
             break
 
@@ -247,5 +254,12 @@ if __name__ == '__main__':
 """
     nohup python -u ./core/attention.py train_base > tf6.log 2>&1 &
     
-    nohup python -u ./core/attention.py train_base 0.1 > cut_all.log 2>&1 &
+    #nohup python -u ./core/attention.py train_base 0.1 > lda.log 2>&1 &
+    
+    nohup python -u ./core/attention.py train_base  > cut_all_0.65.log 2>&1 &
+    
+    
+    nohup python -u ./core/attention.py gen_sub ./output/model/1562899782/model_6114_0.65403_2.h5 > gen.log 2>&1 &
+    
+    
 """
