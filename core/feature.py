@@ -350,6 +350,35 @@ def get_feature_seq_input_sentences():
 
     return pd.DataFrame(X, index=data.app_id).add_prefix('seq_')
 
+
+@timed()
+def get_feature_bert(max_len):
+    data = get_raw_data()
+    from keras_bert import Tokenizer
+    import codecs
+    token_dict = {}
+    with codecs.open(vocab_path, 'r', 'utf8') as reader:
+        for line in reader:
+            token = line.strip()
+            token_dict[token] = len(token_dict)
+
+    tokenizer = Tokenizer(token_dict)
+
+    #SEQ_LEN = 512
+
+    def get_ids_from_text(text, max_len):
+        ids, segments = tokenizer.encode(text, max_len=max_len)
+        return ids
+
+    indices = np.array([get_ids_from_text(text, max_len) for text in data.app_des.values.tolist()])
+
+
+    df = pd.DataFrame(indices,index=data.index)
+    #df['mask'] = df.ids.apply(lambda val: np.zeros_like(val))
+
+    return df.add_prefix('bert_')
+
+
 #6 hours
 @timed()
 @file_cache()

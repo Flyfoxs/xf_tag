@@ -107,7 +107,7 @@ def gen_sub(model_path , partition_len = 1000):
     _, _, test = get_train_test()
 
     label2id, id2label = get_label_id()
-    input1_col = [col for col in test.columns if not str(col).startswith('fea_')]
+    input1_col = [col for col in test.columns if str(col).startswith('seq_')]
     input2_col = [col for col in test.columns if str(col).startswith('fea_')]
 
     logger.info(f'Input input1_col:{len(input1_col)}, input2_col:{len(input2_col)}')
@@ -140,7 +140,7 @@ def gen_sub(model_path , partition_len = 1000):
 
 def train_base(frac=1):
     X, y, X_test = get_train_test(frac)
-    input1_col = [col for col in X.columns if not str(col).startswith('fea_')]
+    input1_col = [col for col in X.columns if str(col).startswith('seq_')]
     input2_col = [col for col in X.columns if str(col).startswith('fea_')]
     max_words = len(input1_col)
     model = get_model(max_words)

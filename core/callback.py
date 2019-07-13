@@ -24,7 +24,7 @@ class Cal_acc(Callback):
 
     @timed()
     def cal_acc(self):
-        input1_col = [col for col in self.val_x.columns if not str(col).startswith('fea_')]
+        input1_col = [col for col in self.val_x.columns if str(col).startswith('seq_')]
         input2_col = [col for col in self.val_x.columns if str(col).startswith('fea_')]
         model = self.model
         res = model.predict([self.val_x.loc[:,input1_col], self.val_x.loc[:,input2_col]])
@@ -49,7 +49,7 @@ class Cal_acc(Callback):
             self.model.save(model_path)
             print(f'weight save to {model_path}')
 
-        threshold = 0.7
+        threshold = 0.66
         if total >=threshold:
             logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             from core.attention import gen_sub
