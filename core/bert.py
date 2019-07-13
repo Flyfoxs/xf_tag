@@ -4,6 +4,7 @@ import os
 from sklearn.model_selection import StratifiedKFold
 
 from core.callback import *
+from tensorflow.python.keras.callbacks import Callback
 
 from core.feature import *
 from core.conf import *
@@ -19,6 +20,7 @@ os.environ['TF_KERAS'] = '1'
 
 
 
+@lru_cache()
 @timed()
 def get_train_test_bert(frac=1):
 
@@ -98,7 +100,7 @@ def train_base(frac=1):
     model.compile(
         AdamWarmup(decay_steps=decay_steps, warmup_steps=warmup_steps, lr=LR),
         loss='categorical_crossentropy',
-        metrics=['categorical_accuracy', 'accuracy'],
+        metrics=['accuracy'],
     )
 
     input1_col = [col for col in X.columns if str(col).startswith('bert_')]
@@ -126,7 +128,7 @@ def train_base(frac=1):
             his = model.fit([input1, input2], train_y,
                             validation_data = ([val_x.loc[:, input1_col], np.zeros_like(val_x.loc[:, input1_col])], val_y),
                             epochs=8,  shuffle=True, batch_size=64,
-                            #callbacks=[Cal_acc(val_x, y.iloc[test_idx], X_test)]
+                            callbacks=[Cal_acc(val_x, y.iloc[test_idx], X_test)]
                       #steps_per_epoch=1000, validation_steps=10
                       )
 
@@ -137,9 +139,104 @@ def train_base(frac=1):
             break
 
 
+
+class Cal_acc(Callback):
+
+    def __init__(self, val_x, y, X_test):
+        super(Cal_acc, self).__init__()
+        self.val_x , self.y, self.X_test = val_x, y, X_test
+
+        self.feature_len = self.val_x.shape[1]
+
+        import time, os
+        self.batch_id = round(time.time())
+        self.model_folder = f'./output/model/{self.batch_id}/'
+
+        os.makedirs(self.model_folder)
+
+
+        #logger.info(f'Cal_acc base on X:{self.X.shape}, Y:{self.y.shape}')
+
+    @timed()
+    def cal_acc(self):
+        input1_col = [col for col in self.val_x.columns if str(col).startswith('bert_')]
+        #input2_col = [col for col in self.val_x.columns if str(col).startswith('fea_')]
+        #model = self.model
+        res = self.model.predict([self.val_x.loc[:,input1_col], np.zeros_like(self.val_x.loc[:,input1_col])])
+
+        res = pd.DataFrame(res, index=self.val_x.index)
+        acc1, acc2, total = accuracy(res, self.y)
+
+        return acc1, acc2, total
+
+
+
+
+    def on_epoch_end(self, epoch, logs=None):
+        acc1, acc2, total = self.cal_acc()
+        logger.info(f'Epoch#{epoch}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
+
+        # if total >= 0.65:
+        #     model_path = f'{self.model_folder}/model_{self.feature_len}_{total:6.5f}_{epoch}.h5'
+        #     weight_path = f'{self.model_folder}/weight_{self.feature_len}_{total:6.5f}_{epoch}.h5'
+        #
+        #     self.model.save_weights(weight_path)
+        #     self.model.save(model_path)
+        #     print(f'weight save to {model_path}')
+
+        threshold = 0.7
+        if total >=threshold:
+            #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
+            gen_sub(self.model, f'{self.feature_len}_{total:6.5f}_{epoch}')
+        else:
+            logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
+
+
+        return round(total, 5)
+
+
+
+@timed()
+#./output/model/1562899782/model_6114_0.65403_2.h5
+def gen_sub(model , info='bert_' , partition_len = 1000):
+
+    _, _, test = get_train_test_bert()
+
+    label2id, id2label = get_label_id()
+    input1_col = [col for col in test.columns if str(col).startswith('bert_')]
+    input2_col = [col for col in test.columns if str(col).startswith('fea_')]
+
+    logger.info(f'Input input1_col:{len(input1_col)}, input2_col:{len(input2_col)}')
+    res_list = []
+    for sn in tqdm(range(1+ len(test)//partition_len), desc=f'{info}:sub:total:{len(test)},partition_len:{partition_len}'):
+        tmp = test.iloc[sn*partition_len: (sn+1)*partition_len]
+        res = model.predict([ tmp.loc[:,input1_col], np.zeros_like(tmp.loc[:,input1_col]) ])
+        res = pd.DataFrame(res, columns=label2id.keys(), index=tmp.index)
+        res_list.append(res)
+
+    res = pd.concat(res_list)
+    id_cnt = res.shape[1]
+
+    res['label1'] = res.iloc[:, :id_cnt].idxmax(axis=1)
+
+    for index, col in res.label1.items():
+        res.loc[index, col] = np.nan
+
+    res['label2'] = res.iloc[:, :id_cnt].idxmax(axis=1)
+
+
+    for col in ['label1','label2']:
+        res[col] = res[col].replace(id2label)
+
+    res.index.name = 'id'
+    sub_file = f'./output/sub/sub_{info}.csv'
+    res[['label1', 'label2']].to_csv(sub_file)
+    logger.info(f'Sub file save to :{sub_file}')
+    return sub_file
+
 if __name__ == '__main__':
     train_base(1)
 
 """
-nohup python -u ./core/bert.py  > bert.log 2>&1 &
+nohup python -u ./core/bert.py  > bert_512.log 2>&1 &
 """
