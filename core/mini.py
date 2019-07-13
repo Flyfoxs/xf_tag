@@ -1,5 +1,6 @@
 
 from file_cache.utils.util_log import *
+from core.conf import *
 
 vector_size = 200
 
@@ -94,7 +95,7 @@ def gen_mini_partition(word_set, wv_from_text):
 
 @timed()
 def gen_tx_mini():
-    word2vec_tx, vector_size = './input/Tencent_AILab_ChineseEmbedding.txt', 200
+    #word2vec_tx, vector_size = './input/Tencent_AILab_ChineseEmbedding.txt', 200
 
     from core.feature import load_embedding, get_word_cnt
 

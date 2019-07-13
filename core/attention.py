@@ -8,7 +8,7 @@ from core.callback import *
 from core.feature import *
 import keras
 #max_words = 0
-word2vec_tx_mini, vector_size = './input/mini_tx.kv',  200
+
 
 #@lru_cache()
 
@@ -26,7 +26,7 @@ def get_train_test(frac=1):
     feature_col = [col for col in data.columns if col.startswith('fea_') or col.startswith('seq_')]
 
     label2id, id2label = get_label_id()
-    word2id = get_word2id()
+    #word2id = get_word2id()
 
     # Encode input words and labels
     X = train_data.loc[:, feature_col]
@@ -184,7 +184,7 @@ if __name__ == '__main__':
     nohup python -u ./core/attention.py train_base  > cut_all_0.65.log 2>&1 &
     
     
-    nohup python -u ./core/attention.py gen_sub ./output/model/1562899782/model_6114_0.65403_2.h5 > gen.log 2>&1 &
+    nohup python -u ./core/attention.py gen_sub ./output/model/1562949408//model_6124_0.66477_2.h5 > gen.log 2>&1 &
     
     
 """

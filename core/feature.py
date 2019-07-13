@@ -313,10 +313,12 @@ def get_tfidf_all():
 
     return df
 
+
 @lru_cache()
+@timed()
 def get_word2id():
 
-    word_id_vec =  load_embedding(word2vec_tx, type='txt')
+    word_id_vec =  load_embedding(word2vec_tx_mini, type='txt')
 
     word2id = {l: i for i, l in enumerate(set(word_id_vec.index.values))}
 
@@ -348,6 +350,7 @@ def get_feature_seq_input_sentences():
 
     return pd.DataFrame(X, index=data.app_id).add_prefix('seq_')
 
+#6 hours
 @timed()
 @file_cache()
 def get_feature_lda(n_topics):
