@@ -44,7 +44,7 @@ def get_train_test(frac=1):
 def get_model(max_words):
     label2id, id2label = get_label_id()
     word2id = get_word2id()
-    manual_features = get_feature_manual().shape[1]
+    manual_features = get_feature_manual(10).shape[1]
     embedding_dim = 100  # The dimension of word embeddings
 
     # Define input tensor

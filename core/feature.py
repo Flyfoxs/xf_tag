@@ -85,8 +85,9 @@ def split_app_des(df, seq_len):
     for i in tqdm(range(4), desc='split app des'):
         tmp = df.loc[(df.len_ > i * seq_len)]
         tmp['app_des'] = tmp.app_des.apply(lambda val: val[i * seq_len:(i + 1) * seq_len])
+
+        tmp['len_'] = tmp.app_des.apply(lambda val: len(val))
         tmp['bin'] = i
-        print('======',tmp.index[:3])
         tmp.app_id_ex = tmp.app_id_ex + '_' + str(i)
 
         logger.info(f'\nThere are {len(tmp)} records between ({i*seq_len},  {(i+1)*seq_len}] need to split.')
@@ -113,7 +114,7 @@ def get_label_id():
 def get_data():
     raw_data = get_raw_data()
 
-    manual = get_feature_manual()
+    manual = get_feature_manual(10)
 
     seq = get_feature_seq_input_sentences()
 
@@ -291,11 +292,18 @@ def accuracy(res, y):
 
 @timed()
 @file_cache()
-def get_feature_manual(n_topics=10):
+def get_feature_manual(n_topics):
     tfidf = get_feature_tfidf_type()
     #return tfidf
     lda = get_feature_lda(n_topics)
-    return pd.concat([tfidf,lda], axis=1)
+
+    manual = pd.concat([tfidf,lda], axis=1)
+
+    manual['app_id'] = manual.index
+
+    manual = manual.drop_duplicates(['app_id'])
+
+    return manual
 
 
 #@lru_cache()
@@ -314,7 +322,7 @@ def get_feature_tfidf_type():
     return tfidf.loc[:, feature_name].fillna(0).add_prefix('fea_tfidf_')
 
 @timed()
-@file_cache()
+#@file_cache()
 def get_tfidf_all():
     with timed_bolck('Gen_ALL_docs'):
         data = get_raw_data()
@@ -337,7 +345,7 @@ def get_tfidf_all():
         tf_idf_vector = tfidf_transformer.fit_transform(word_count_vector)
 
     with timed_bolck('Gen Sparse TFIDF'):
-        df = pd.SparseDataFrame(tf_idf_vector, columns=cv.get_feature_names(), index=data.index)
+        df = pd.SparseDataFrame(tf_idf_vector, columns=cv.get_feature_names(), index=data.app_id)
 
     return df
 
@@ -412,9 +420,11 @@ def get_feature_bert(max_len):
         bert['app_id'] = data.app_id.values
         bert['app_id_ex'] = data.app_id_ex.values
         bert['bin'] = data.bin.values
+        bert['len_'] = data.len_.values
 
         del raw['app_des']
         del raw['app_id_ex']
+        del raw['len_']
         bert = pd.merge(bert, raw, how='left', on=['app_id'])
 
         bert.index = bert.app_id_ex
@@ -449,7 +459,7 @@ def get_feature_lda(n_topics):
                                         random_state=666)
         docres = lda.fit_transform(cntTf)
 
-    return pd.DataFrame(docres, columns=[f'fea_lda_{i}' for i in range(n_topics)], index=data.index)
+    return pd.DataFrame(docres, columns=[f'fea_lda_{i}' for i in range(n_topics)], index=data.app_id)
 
 
 
@@ -458,6 +468,6 @@ if __name__ == '__main__':
     fire.Fire()
 
 """
-nohup python core/feature.py get_feature_manual 10 > feature.log 2>&1 &
+nohup python core/feature.py get_feature_manual 20 > feature.log 2>&1 &
 
 """
