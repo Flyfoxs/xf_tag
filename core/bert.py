@@ -12,7 +12,6 @@ import keras
 import os
 
 
-
 os.environ['TF_KERAS'] = '1'
 
 
@@ -24,19 +23,9 @@ os.environ['TF_KERAS'] = '1'
 @timed()
 def get_train_test_bert(frac=1):
 
-    raw_data = get_raw_data()
+    data = get_feature_bert(SEQ_LEN)
 
-    bert = get_feature_bert(SEQ_LEN)
-
-    manual = get_feature_manual()
-
-    data = pd.concat([raw_data, bert, manual ], axis=1)
-
-    logger.info(f'Shape of data:{data.shape}, raw_data:{raw_data.shape} manual:{manual.shape}, bert:{bert.shape} ')
-
-    data.sort_values(['type_cnt'])
-
-
+    data = data.loc[data.bin<=0]
 
     train_data = data.loc[pd.notna(data.type_id)].sample(frac=frac, random_state=2019)
     labels = train_data.type_id.values.tolist()
@@ -69,26 +58,28 @@ def get_train_test_bert(frac=1):
 
 
 
-from keras_bert import load_trained_model_from_checkpoint
-
-model = load_trained_model_from_checkpoint(config_path, checkpoint_path, training=True,seq_len=SEQ_LEN,)
-model.summary(line_length=120)
-
-from tensorflow.python import keras
-from keras_bert import AdamWarmup, calc_train_steps
-inputs = model.inputs[:2]
-dense = model.get_layer('NSP-Dense').output
-outputs = keras.layers.Dense(units=152, activation='softmax')(dense)
-
-BATCH_SIZE = 128
-EPOCHS = 5
-LR = 1e-4
-
-
 
 
 def train_base(frac=1):
+
     X, y, X_test = get_train_test_bert(frac)
+
+    BATCH_SIZE = 128
+    EPOCHS = 5
+    LR = 1e-4
+
+
+    ##Begin to define model
+    from keras_bert import load_trained_model_from_checkpoint
+
+    model = load_trained_model_from_checkpoint(config_path, checkpoint_path, training=True, seq_len=SEQ_LEN, )
+    model.summary(line_length=120)
+
+    from tensorflow.python import keras
+    from keras_bert import AdamWarmup, calc_train_steps
+    inputs = model.inputs[:2]
+    dense = model.get_layer('NSP-Dense').output
+    outputs = keras.layers.Dense(units=152, activation='softmax')(dense)
 
     decay_steps, warmup_steps = calc_train_steps(
         y.shape[0],
@@ -102,6 +93,7 @@ def train_base(frac=1):
         loss='categorical_crossentropy',
         metrics=['accuracy'],
     )
+    ##End to define model
 
     input1_col = [col for col in X.columns if str(col).startswith('bert_')]
     input2_col = [col for col in X.columns if str(col).startswith('fea_')]
@@ -118,25 +110,25 @@ def train_base(frac=1):
             X.iloc[train_idx], Y_cat[train_idx], X.iloc[test_idx], Y_cat[test_idx]
 
         logger.info(f'get_train_test output: train_x:{train_x.shape}, train_y:{train_y.shape}, val_x:{val_x.shape}, X_test:{X_test.shape}')
-        for sn in range(5):
-            input1 = train_x.loc[:, input1_col]
-            input2 = np.zeros_like(input1)
+        #for sn in range(5):
+        input1 = train_x.loc[:, input1_col].astype(np.float32)
+        input2 = np.zeros_like(input1).astype(np.int8)
 
-            logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
+        logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
 
-            logger.info(f'NN Input1:{input1[:3]}')
-            his = model.fit([input1, input2], train_y,
-                            validation_data = ([val_x.loc[:, input1_col], np.zeros_like(val_x.loc[:, input1_col])], val_y),
-                            epochs=8,  shuffle=True, batch_size=64,
-                            callbacks=[Cal_acc(val_x, y.iloc[test_idx], X_test)]
-                      #steps_per_epoch=1000, validation_steps=10
-                      )
+        logger.info(f'NN Input1:{val_x[:3]}')
+        his = model.fit([input1, input2], train_y,
+                        validation_data = ([val_x.loc[:, input1_col], np.zeros_like(val_x.loc[:, input1_col])], val_y),
+                        epochs=EPOCHS,  shuffle=True, batch_size=64,
+                        callbacks=[Cal_acc(val_x, y.iloc[test_idx], X_test)]
+                  #steps_per_epoch=1000, validation_steps=10
+                  )
 
 
 
-            #gen_sub(model, X_test, sn)
+        #gen_sub(model, X_test, sn)
 
-            break
+        break
 
 
 
@@ -173,6 +165,7 @@ class Cal_acc(Callback):
 
 
     def on_epoch_end(self, epoch, logs=None):
+        print('\n')
         acc1, acc2, total = self.cal_acc()
         logger.info(f'Epoch#{epoch}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
 
@@ -184,14 +177,14 @@ class Cal_acc(Callback):
         #     self.model.save(model_path)
         #     print(f'weight save to {model_path}')
 
-        threshold = 0.7
+        threshold = 0.78
         if total >=threshold:
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             gen_sub(self.model, f'{self.feature_len}_{total:6.5f}_{epoch}')
         else:
             logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
 
-
+        print('\n')
         return round(total, 5)
 
 
@@ -229,14 +222,17 @@ def gen_sub(model , info='bert_' , partition_len = 1000):
         res[col] = res[col].replace(id2label)
 
     res.index.name = 'id'
+    info = info.replace('.','')
     sub_file = f'./output/sub/sub_{info}.csv'
     res[['label1', 'label2']].to_csv(sub_file)
     logger.info(f'Sub file save to :{sub_file}')
     return sub_file
 
 if __name__ == '__main__':
-    train_base(1)
+    import fire
+    fire.Fire()
+
 
 """
-nohup python -u ./core/bert.py  > bert_512.log 2>&1 &
+nohup python -u ./core/bert.py train_base  > extend_bert_128_bin_1.log 2>&1 &
 """

@@ -38,6 +38,9 @@ def extend_train_set():
                                 quoting=3,
                                 )
 
+    apptype_train.index = apptype_train.app_id
+    apptype_train['app_id_ex'] = apptype_train.app_id
+
     apptype_train['type_cnt'] = apptype_train.type_id.apply(lambda val: len(val.split('|')))
 
     apptype_train_main = apptype_train.loc[apptype_train.type_cnt == 1]
@@ -48,7 +51,7 @@ def extend_train_set():
     split_res_list = []
     for type_sn in range(apptype_train['type_cnt'].max()):
         tmp=split_type_id(todo, type_sn)
-        tmp.app_id = tmp.app_id + f'_{type_sn}'
+        tmp['app_id_ex'] = tmp.app_id_ex + f'_{type_sn}'
         split_res_list.append(tmp)
     split_res = pd.concat(split_res_list)
 
@@ -64,19 +67,42 @@ def get_raw_data():
                           dtype=type_dict)
 
     apptype_test = pd.read_csv(f'{input_dir}/app_desc.dat', delimiter='\t', quoting=3, header=None, names=['app_id', 'app_des'], )
-
+    #apptype_test.index = apptype_test.app_id
+    apptype_test['app_id_ex'] = apptype_test.app_id
 
     data = pd.concat([apptype_test, apptype_train], axis=0)
     data = pd.merge(data, apptype, on='type_id', how='left')
 
-
-    data.index = data.app_id
+    data['len_'] = data.app_des.apply(lambda val: len(val))
 
     return data.sort_values(['type_cnt'])
 
+
+@timed()
+def split_app_des(df, seq_len):
+    df_list = []
+    df['len_'] = df.app_des.apply(lambda val: len(val))
+    for i in tqdm(range(4), desc='split app des'):
+        tmp = df.loc[(df.len_ > i * seq_len)]
+        tmp['app_des'] = tmp.app_des.apply(lambda val: val[i * seq_len:(i + 1) * seq_len])
+        tmp['bin'] = i
+        print('======',tmp.index[:3])
+        tmp.app_id_ex = tmp.app_id_ex + '_' + str(i)
+
+        logger.info(f'\nThere are {len(tmp)} records between ({i*seq_len},  {(i+1)*seq_len}] need to split.')
+        df_list.append(tmp)
+    tmp = df.loc[(df.len_ > (i + 1) * seq_len)]
+    logger.info(f'\nThere are {len(tmp)} records between ({(i+1)*seq_len},  nolimit] need to split.')
+    df_list.append(tmp)
+
+    return pd.concat(df_list, axis=0)
+
+
+
 @lru_cache()
 def get_label_id():
-    app_type  = get_app_type_ex()
+    app_type = pd.read_csv(f'{input_dir}/apptype_id_name.txt', delimiter='\t', quoting=3, names=['type_id', 'type_name'],
+                          dtype=type_dict)
     labels = app_type.type_id.values.tolist()
     # Construction of label2id and id2label dicts
     label2id = {l: i for i, l in enumerate(set(labels))}
@@ -249,7 +275,9 @@ def accuracy(res, y):
 
     res['label1'] = res.iloc[:, :id_cnt].idxmax(axis=1)
 
+    #Exclude top#1
     for index, col in res.label1.items():
+        #logger.info(f'top#1 is {index}, {col}')
         res.loc[index, col] = np.nan
 
     res['label2'] = res.iloc[:, :id_cnt].idxmax(axis=1)
@@ -352,8 +380,12 @@ def get_feature_seq_input_sentences():
 
 
 @timed()
+#@file_cache()
 def get_feature_bert(max_len):
-    data = get_raw_data()
+    raw = get_raw_data()
+
+    data = split_app_des(raw,max_len)
+
     from keras_bert import Tokenizer
     import codecs
     token_dict = {}
@@ -364,19 +396,30 @@ def get_feature_bert(max_len):
 
     tokenizer = Tokenizer(token_dict)
 
-    #SEQ_LEN = 512
-
     def get_ids_from_text(text, max_len):
         ids, segments = tokenizer.encode(text, max_len=max_len)
         return ids
+    with timed_bolck('str to bert format'
+                     ''):
+        #On app_id have multiply type_id
+        data = data.drop_duplicates(['app_id', 'bin'])
+        indices = np.array([get_ids_from_text(text, max_len) for text in data.app_des.values.tolist()])
+        bert = pd.DataFrame(indices,index=data.app_id_ex).add_prefix('bert_')
 
-    indices = np.array([get_ids_from_text(text, max_len) for text in data.app_des.values.tolist()])
+    with timed_bolck('Join bert and raw data'):
+        old_shape = bert.shape
 
+        bert['app_id'] = data.app_id.values
+        bert['app_id_ex'] = data.app_id_ex.values
+        bert['bin'] = data.bin.values
 
-    df = pd.DataFrame(indices,index=data.index)
-    #df['mask'] = df.ids.apply(lambda val: np.zeros_like(val))
+        del raw['app_des']
+        del raw['app_id_ex']
+        bert = pd.merge(bert, raw, how='left', on=['app_id'])
 
-    return df.add_prefix('bert_')
+        bert.index = bert.app_id_ex
+        logger.info(f'Merge extend te shape from {old_shape} to {bert.shape}')
+    return bert.sort_values(['app_id_ex'])
 
 
 #6 hours
@@ -415,6 +458,6 @@ if __name__ == '__main__':
     fire.Fire()
 
 """
-nohup python core/feature.py get_feature_lda 20 > feature.log 2>&1 &
+nohup python core/feature.py get_feature_manual 10 > feature.log 2>&1 &
 
 """
