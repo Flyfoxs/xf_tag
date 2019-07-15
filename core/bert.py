@@ -203,7 +203,7 @@ class Cal_acc(Callback):
         #     print(f'weight save to {model_path}')
 
         threshold = 0.775
-        if total >=threshold and epoch>=2 and total > self.max_score :
+        if total >=threshold and epoch>=1 and total > self.max_score :
             self.max_score = max(self.max_score, total)
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             gen_sub(self.model, f'{self.feature_len}_{total:6.5f}_{epoch}')
@@ -240,22 +240,23 @@ def gen_sub(model , info='bert_' , partition_len = 5000):
     #print('\nafter concat\n', res.iloc[:3, :3].head())
     res['id'] = res.index
     res.index.name = 'id'
+    res['bin'] = res.id.apply(lambda val: int(val.split('_')[1]))
     #print('\nend res\n', res.iloc[:3, :3].head())
     #res.to_pickle(f'./output/tmp_{info}.pkl')
 
 
     res_mean = res.copy(deep=True)
-    print('\nres_mean\n', res_mean.loc[:, ['id']].head(3))
+    #print('\nres_mean\n', res_mean.loc[:, ['id']].head(3))
+    res_mean = res_mean.loc[res_mean.bin <= 1]
     res_mean['id'] = res_mean.id.apply(lambda val: val.split('_')[0])
     res_mean = res_mean.groupby('id').mean()
+    del res_mean['bin']
 
 
     res_0 = res.copy(deep=True)
-
-    res_0['bin'] = res_0.id.apply(lambda val: int(val.split('_')[1]))
     res_0 = res_0.loc[res_0.bin == 0]
     res_0.index  = res_0.id.apply(lambda val: val.split('_')[0])
-    print('\nres_0\n', res_0.loc[:, ['id', 'bin']].head(3))
+    #print('\nres_0\n', res_0.loc[:, ['id', 'bin']].head(3))
 
     del res_0['bin']
     del res_0['id']
@@ -275,7 +276,7 @@ def gen_sub(model , info='bert_' , partition_len = 5000):
             res[col] = res[col].replace(id2label)
 
         info = info.replace('.','')
-        sub_file = f'./output/sub/b_{info}_{name}.csv'
+        sub_file = f'./output/sub/b1_{info}_{name}.csv'
         res[['label1', 'label2']].to_csv(sub_file)
         logger.info(f'Sub file save to :{sub_file}')
 

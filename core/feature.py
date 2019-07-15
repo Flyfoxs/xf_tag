@@ -80,20 +80,19 @@ def get_raw_data():
 
 @timed()
 def split_app_des(df, seq_len):
-    #seq_len = seq_len + 128
+    seq_len = seq_len + 128
     df_list = []
     df['len_'] = df.app_des.apply(lambda val: len(val))
-    # for i in tqdm(range(4), desc='split app des'):
-    #     tmp = df.loc[(df.len_ >= i * seq_len)].copy()
-    #     tmp['app_des'] = tmp.app_des.apply(lambda val: val[i * seq_len : (i + 1) * seq_len])
-    #     tmp['len_'] = tmp.app_des.apply(lambda val: len(val))
-    #     tmp['bin'] = i
-    #     tmp['app_id_ex'] = tmp.app_id_ex + '_' + str(i)
-    #
-    #     logger.info(f'\nThere are {len(tmp)} records between [{i*seq_len},  {(i+1)*seq_len}) need to split.')
-    #     df_list.append(tmp)
-    # i += 1
-    i = 0
+    for i in tqdm(range(4), desc='split app des'):
+        tmp = df.loc[(df.len_ >= i * seq_len)].copy()
+        tmp['app_des'] = tmp.app_des.apply(lambda val: val[i * seq_len : (i + 1) * seq_len])
+        tmp['len_'] = tmp.app_des.apply(lambda val: len(val))
+        tmp['bin'] = i
+        tmp['app_id_ex'] = tmp.app_id_ex + '_' + str(i)
+
+        logger.info(f'\nThere are {len(tmp)} records between [{i*seq_len},  {(i+1)*seq_len}) need to split.')
+        df_list.append(tmp)
+    i += 1
     tmp = df.loc[(df.len_ >= i * seq_len)].copy()
     tmp['app_des'] = tmp.app_des.apply(lambda val: val[i * seq_len:])
     tmp['len_'] = tmp.app_des.apply(lambda val: len(val))
