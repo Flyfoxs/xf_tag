@@ -1,5 +1,6 @@
 import sys
 import os
+from multiprocessing import Process
 
 from sklearn.model_selection import StratifiedKFold
 
@@ -14,9 +15,7 @@ import os
 
 os.environ['TF_KERAS'] = '1'
 
-
-
-
+frac = 0
 
 
 @lru_cache()
@@ -67,15 +66,20 @@ def get_train_test_bert(frac=1):
 
 def boost_train(boost=10):
     for _ in range(boost):
-        train_base()
+        p = Process(target=train_base)
+        p.start()
+        p.join()
+
 
 
 
 @timed()
-def train_base(frac=1):
+def train_base(frac_input=1):
+    global frac
+    frac = frac_input
 
     with timed_bolck('Prepare train data'):
-        X, y, X_test = get_train_test_bert(frac)
+        X, y, _ = get_train_test_bert(frac)
 
         BATCH_SIZE = 128
         EPOCHS = 4
@@ -124,20 +128,24 @@ def train_base(frac=1):
             train_x, train_y, val_x, val_y = \
                 X.iloc[train_idx], Y_cat[train_idx], X.iloc[test_idx], Y_cat[test_idx]
 
-            logger.info(f'get_train_test output: train_x:{train_x.shape}, train_y:{train_y.shape}, val_x:{val_x.shape}, X_test:{X_test.shape}')
+            logger.info(f'get_train_test output: train_x:{train_x.shape}, train_y:{train_y.shape}, val_x:{val_x.shape} ')
             #for sn in range(5):
-            input1 = train_x.loc[:, input1_col].astype(np.float32)
-            input2 = np.zeros_like(input1).astype(np.int8)
+            input1 = train_x.loc[:, input1_col]#.astype(np.float32)
+            input2 = np.zeros_like(input1)#.astype(np.int8)
 
             logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
 
             logger.info(f'NN Input1:{val_x[:3]}')
-            his = model.fit([input1, input2], train_y,
-                            validation_data = ([val_x.loc[:, input1_col], np.zeros_like(val_x.loc[:, input1_col])], val_y),
-                            epochs=EPOCHS,  shuffle=True, batch_size=64,
-                            callbacks=[Cal_acc(val_x, y.iloc[test_idx], X_test)]
-                      #steps_per_epoch=1000, validation_steps=10
-                      )
+
+            from keras_bert import get_custom_objects
+            import tensorflow as tf
+            with tf.keras.utils.custom_object_scope(get_custom_objects()):
+                his = model.fit([input1, input2], train_y,
+                                validation_data = ([val_x.loc[:, input1_col], np.zeros_like(val_x.loc[:, input1_col])], val_y),
+                                epochs=EPOCHS,  shuffle=True, batch_size=64,
+                                callbacks=[Cal_acc(val_x, y.iloc[test_idx] )]
+                          #steps_per_epoch=1000, validation_steps=10
+                          )
 
 
 
@@ -149,11 +157,13 @@ def train_base(frac=1):
 
 class Cal_acc(Callback):
 
-    def __init__(self, val_x, y, X_test):
+    def __init__(self, val_x, y ):
         super(Cal_acc, self).__init__()
-        self.val_x , self.y, self.X_test = val_x, y, X_test
+        self.val_x , self.y = val_x, y
 
         self.feature_len = self.val_x.shape[1]
+
+        self.max_score = 0
 
         import time, os
         self.batch_id = round(time.time())
@@ -192,8 +202,9 @@ class Cal_acc(Callback):
         #     self.model.save(model_path)
         #     print(f'weight save to {model_path}')
 
-        threshold = 0.78
-        if total >=threshold or epoch>=3:
+        threshold = 0.775
+        if total >=threshold and epoch>=2 and total > self.max_score :
+            self.max_score = max(self.max_score, total)
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             gen_sub(self.model, f'{self.feature_len}_{total:6.5f}_{epoch}')
         else:
@@ -206,9 +217,10 @@ class Cal_acc(Callback):
 
 @timed()
 #./output/model/1562899782/model_6114_0.65403_2.h5
-def gen_sub(model , info='bert_' , partition_len = 2000):
+def gen_sub(model , info='bert_' , partition_len = 5000):
 
-    _, _, test = get_train_test_bert()
+    global frac
+    _, _, test = get_train_test_bert(frac)
 
     label2id, id2label = get_label_id()
     input1_col = [col for col in test.columns if str(col).startswith('bert_')]
@@ -218,27 +230,35 @@ def gen_sub(model , info='bert_' , partition_len = 2000):
     res_list = []
     for sn in tqdm(range(1+ len(test)//partition_len), desc=f'{info}:sub:total:{len(test)},partition_len:{partition_len}'):
         tmp = test.iloc[sn*partition_len: (sn+1)*partition_len]
+        #print('\nbegin tmp\n', tmp.iloc[:3,:3].head())
         res = model.predict([ tmp.loc[:,input1_col], np.zeros_like(tmp.loc[:,input1_col]) ])
         res = pd.DataFrame(res, columns=label2id.keys(), index=tmp.index)
-
+        #print('\nend tmp\n', res.iloc[:3, :3].head())
         res_list.append(res)
 
     res = pd.concat(res_list)
+    #print('\nafter concat\n', res.iloc[:3, :3].head())
+    res['id'] = res.index
     res.index.name = 'id'
-    res.id = res.index
+    #print('\nend res\n', res.iloc[:3, :3].head())
+    #res.to_pickle(f'./output/tmp_{info}.pkl')
 
-    res.to_csv(f'./output/tmp_{info}.csv')
 
-    res_mean = res.copy()
+    res_mean = res.copy(deep=True)
+    print('\nres_mean\n', res_mean.loc[:, ['id']].head(3))
     res_mean['id'] = res_mean.id.apply(lambda val: val.split('_')[0])
     res_mean = res_mean.groupby('id').mean()
 
-    res_0 = res.copy()
-    res_0['bin'] = res_0.id.apply(lambda val: val.split('_')[1])
-    res_0.index  = res_0.id.apply(lambda val: val.split('_')[0])
 
-    res_0 = res.loc[res_0.bin==0]
-    del res_0['bin'] , res_0['id']
+    res_0 = res.copy(deep=True)
+
+    res_0['bin'] = res_0.id.apply(lambda val: int(val.split('_')[1]))
+    res_0 = res_0.loc[res_0.bin == 0]
+    res_0.index  = res_0.id.apply(lambda val: val.split('_')[0])
+    print('\nres_0\n', res_0.loc[:, ['id', 'bin']].head(3))
+
+    del res_0['bin']
+    del res_0['id']
 
     for name, res in [('single',res_0), ('mean', res_mean)]:
 
@@ -255,7 +275,7 @@ def gen_sub(model , info='bert_' , partition_len = 2000):
             res[col] = res[col].replace(id2label)
 
         info = info.replace('.','')
-        sub_file = f'./output/sub/b_{name}_{info}.csv'
+        sub_file = f'./output/sub/b_{info}_{name}.csv'
         res[['label1', 'label2']].to_csv(sub_file)
         logger.info(f'Sub file save to :{sub_file}')
 
@@ -271,6 +291,6 @@ if __name__ == '__main__':
 nohup python -u ./core/bert.py train_base  > bin_0.log 2>&1 &
 nohup python -u ./core/bert.py train_base  > extend_bert_mean_bin_1.log 2>&1 &
 
-nohup python -u ./core/bert.py boost_train 10 > boost.log 2>&1 &
+nohup python -u ./core/bert.py boost_train 10 >> boost_1.log 2>&1 &
 
 """

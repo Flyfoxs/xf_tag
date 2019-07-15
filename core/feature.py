@@ -80,20 +80,26 @@ def get_raw_data():
 
 @timed()
 def split_app_des(df, seq_len):
+    #seq_len = seq_len + 128
     df_list = []
     df['len_'] = df.app_des.apply(lambda val: len(val))
-    for i in tqdm(range(4), desc='split app des'):
-        tmp = df.loc[(df.len_ > i * seq_len)]
-        tmp['app_des'] = tmp.app_des.apply(lambda val: val[i * seq_len:(i + 1) * seq_len])
-
-        tmp['len_'] = tmp.app_des.apply(lambda val: len(val))
-        tmp['bin'] = i
-        tmp.app_id_ex = tmp.app_id_ex + '_' + str(i)
-
-        logger.info(f'\nThere are {len(tmp)} records between ({i*seq_len},  {(i+1)*seq_len}] need to split.')
-        df_list.append(tmp)
-    tmp = df.loc[(df.len_ > (i + 1) * seq_len)]
-    logger.info(f'\nThere are {len(tmp)} records between ({(i+1)*seq_len},  nolimit] need to split.')
+    # for i in tqdm(range(4), desc='split app des'):
+    #     tmp = df.loc[(df.len_ >= i * seq_len)].copy()
+    #     tmp['app_des'] = tmp.app_des.apply(lambda val: val[i * seq_len : (i + 1) * seq_len])
+    #     tmp['len_'] = tmp.app_des.apply(lambda val: len(val))
+    #     tmp['bin'] = i
+    #     tmp['app_id_ex'] = tmp.app_id_ex + '_' + str(i)
+    #
+    #     logger.info(f'\nThere are {len(tmp)} records between [{i*seq_len},  {(i+1)*seq_len}) need to split.')
+    #     df_list.append(tmp)
+    # i += 1
+    i = 0
+    tmp = df.loc[(df.len_ >= i * seq_len)].copy()
+    tmp['app_des'] = tmp.app_des.apply(lambda val: val[i * seq_len:])
+    tmp['len_'] = tmp.app_des.apply(lambda val: len(val))
+    tmp['bin'] = i
+    tmp['app_id_ex'] = tmp.app_id_ex + '_' + str(i)
+    logger.info(f'\nThere are {len(tmp)} records between [{(i)*seq_len},  nolimit) need to split.')
     df_list.append(tmp)
 
     return pd.concat(df_list, axis=0)
@@ -323,6 +329,7 @@ def get_feature_tfidf_type():
 
 @timed()
 #@file_cache()
+@lru_cache()
 def get_tfidf_all():
     with timed_bolck('Gen_ALL_docs'):
         data = get_raw_data()
@@ -392,7 +399,7 @@ def get_feature_seq_input_sentences():
 def get_feature_bert(max_len):
     raw = get_raw_data()
 
-    data = split_app_des(raw,max_len)
+    data = split_app_des(raw, max_len + 128)
 
     from keras_bert import Tokenizer
     import codecs
@@ -429,7 +436,7 @@ def get_feature_bert(max_len):
 
         bert.index = bert.app_id_ex
         logger.info(f'Merge extend te shape from {old_shape} to {bert.shape}')
-    return bert.sort_values(['app_id_ex'])
+    return bert.sort_values(['app_id_ex'], ascending=False)
 
 
 #6 hours
@@ -452,7 +459,7 @@ def get_feature_lda(n_topics):
         cv = CountVectorizer(max_df=0.85, stop_words=[',', '[', ']','(', ')'])
         cntTf = cv.fit_transform(docs)
 
-    with timed_bolck('Cal LDA'):
+    with timed_bolck(f'Cal LDA#{n_topics}'):
 
         lda = LatentDirichletAllocation(n_components=n_topics,
                                         learning_offset=50.,
@@ -462,12 +469,15 @@ def get_feature_lda(n_topics):
     return pd.DataFrame(docres, columns=[f'fea_lda_{i}' for i in range(n_topics)], index=data.app_id)
 
 
+def batch_manual():
+    for n_topics in range(10, 100, 10):
+        get_feature_manual(n_topics)
 
 if __name__ == '__main__':
     import fire
     fire.Fire()
 
 """
-nohup python core/feature.py get_feature_manual 20 > feature.log 2>&1 &
+nohup python core/feature.py batch_manual > feature.log 2>&1 &
 
 """
