@@ -153,7 +153,7 @@ def train_base(frac_input=1):
 
             break
 
-
+    return his
 
 class Cal_acc(Callback):
 
@@ -192,7 +192,6 @@ class Cal_acc(Callback):
     def on_epoch_end(self, epoch, logs=None):
         print('\n')
         acc1, acc2, total = self.cal_acc()
-        logger.info(f'Epoch#{epoch}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
 
         # if total >= 0.65:
         #     model_path = f'{self.model_folder}/model_{self.feature_len}_{total:6.5f}_{epoch}.h5'
@@ -204,11 +203,14 @@ class Cal_acc(Callback):
 
         threshold = 0.775
         if total >=threshold and epoch>=1 and total > self.max_score :
-            self.max_score = max(self.max_score, total)
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             gen_sub(self.model, f'{self.feature_len}_{total:6.5f}_{epoch}')
         else:
             logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
+
+        self.max_score = max(self.max_score, total)
+
+        logger.info(f'Epoch#{epoch}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
 
         print('\n')
         return round(total, 5)
@@ -242,13 +244,25 @@ def gen_sub(model , info='bert_' , partition_len = 5000):
     res.index.name = 'id'
     res['bin'] = res.id.apply(lambda val: int(val.split('_')[1]))
     #print('\nend res\n', res.iloc[:3, :3].head())
-    #res.to_pickle(f'./output/tmp_{info}.pkl')
+    res.to_pickle(f'./output/tmp_sub.pkl')
 
 
     res_mean = res.copy(deep=True)
     #print('\nres_mean\n', res_mean.loc[:, ['id']].head(3))
-    res_mean = res_mean.loc[res_mean.bin <= 1]
+
     res_mean['id'] = res_mean.id.apply(lambda val: val.split('_')[0])
+
+    res_select = res_mean.groupby('id')['bin'].agg({'bin_max': 'max'})
+    res_select.head()
+    res_select = res_select.loc[res_select.bin_max == 3]
+
+
+    res_mean = res_mean.loc[(res_mean.bin == 0)
+                            | ((res_mean.bin == 1) & (res_mean.id.isin(res_select.index)))
+                            ]
+
+    logger.info(f'Try to cal avg for res_man:\n{res_mean.bin.value_counts()}')
+
     res_mean = res_mean.groupby('id').mean()
     del res_mean['bin']
 
@@ -276,7 +290,7 @@ def gen_sub(model , info='bert_' , partition_len = 5000):
             res[col] = res[col].replace(id2label)
 
         info = info.replace('.','')
-        sub_file = f'./output/sub/b1_{info}_{name}.csv'
+        sub_file = f'./output/sub/v2_{info}_{name}.csv'
         res[['label1', 'label2']].to_csv(sub_file)
         logger.info(f'Sub file save to :{sub_file}')
 
