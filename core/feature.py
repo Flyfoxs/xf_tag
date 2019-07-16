@@ -79,28 +79,38 @@ def get_raw_data():
 
 
 @timed()
-def split_app_des(df, seq_len):
-    seq_len = seq_len + 128
+def split_app_des(df, seq_len_input):
+    seq_len = seq_len_input + 128
     df_list = []
     df['len_'] = df.app_des.apply(lambda val: len(val))
-    for i in tqdm(range(4), desc='split app des'):
-        tmp = df.loc[(df.len_ >= i * seq_len)].copy()
-        tmp['app_des'] = tmp.app_des.apply(lambda val: val[i * seq_len : (i + 1) * seq_len])
-        tmp['len_'] = tmp.app_des.apply(lambda val: len(val))
-        tmp['bin'] = i
-        tmp['app_id_ex'] = tmp.app_id_ex + '_' + str(i)
 
-        logger.info(f'\nThere are {len(tmp)} records between [{i*seq_len},  {(i+1)*seq_len}) need to split.')
-        df_list.append(tmp)
-    i += 1
+    split_df = True
+
+    if split_df:
+        for i in tqdm(range(4), desc='split app des'):
+            tmp = df.loc[(df.len_ >= i * seq_len)].copy()
+            tmp['app_des'] = tmp.app_des.apply(lambda val: val[i * seq_len : (i + 1) * seq_len])
+            tmp['len_'] = tmp.app_des.apply(lambda val: len(val))
+            tmp['bin'] = i
+            tmp['app_id_ex'] = tmp.app_id_ex + '_' + str(i)
+
+            #logger.info(f'\nThere are {len(tmp)} records between [{i*seq_len},  {(i+1)*seq_len}) need to split.')
+            df_list.append(tmp)
+        i += 1
+    else:
+        i = 0
+    #Reset of the DF need to add
     tmp = df.loc[(df.len_ >= i * seq_len)].copy()
     tmp['app_des'] = tmp.app_des.apply(lambda val: val[i * seq_len:])
     tmp['len_'] = tmp.app_des.apply(lambda val: len(val))
     tmp['bin'] = i
     tmp['app_id_ex'] = tmp.app_id_ex + '_' + str(i)
-    logger.info(f'\nThere are {len(tmp)} records between [{(i)*seq_len},  nolimit) need to split.')
+    #logger.info(f'\nThere are {len(tmp)} records between [{(i)*seq_len},  nolimit) need to split.')
+
     df_list.append(tmp)
 
+    logger.info(f'DF#{df.shape} split to {i + 1} groups, with seq_len_input={seq_len_input}, seq_len = {seq_len}')
+    logger.info(f'The split result is: { [len(df)  for df in df_list] }')
     return pd.concat(df_list, axis=0)
 
 

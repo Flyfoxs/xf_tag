@@ -17,7 +17,7 @@ os.environ['TF_KERAS'] = '1'
 
 frac = 0
 
-
+#Batch size, MAX_len+ex_length, Manual, Manual GP feature cnt, frac
 @lru_cache()
 @timed()
 def get_train_test_bert(frac=1):
@@ -31,10 +31,11 @@ def get_train_test_bert(frac=1):
 
     timed_bolck('Remove gan data, and len is less then 100')
 
-    data = data.loc[ (data.bin == 0) | (data['len_'] >= 50) ]
+    data = data.loc[ (data.bin == 0) | (data['len_'] >= 100) ]
 
     logger.info(f'Bin distribution:\n{data.bin.value_counts().sort_index()}')
 
+    #data = data.sort_index()
     train_data = data.loc[pd.notna(data.type_id)].sample(frac=frac, random_state=2019)
     labels = train_data.type_id.values.tolist()
 
@@ -74,16 +75,17 @@ def boost_train(boost=10):
 
 
 @timed()
-def train_base(frac_input=1):
+def train_base(frac_input=1, fold=0):
     global frac
     frac = frac_input
+    BATCH_SIZE = 128
+    EPOCHS = 4
+    LR = 1e-4
 
-    with timed_bolck('Prepare train data'):
+    with timed_bolck(f'Prepare train data#{BATCH_SIZE}'):
         X, y, _ = get_train_test_bert(frac)
 
-        BATCH_SIZE = 128
-        EPOCHS = 4
-        LR = 1e-4
+
 
 
         ##Begin to define model
@@ -121,8 +123,8 @@ def train_base(frac_input=1):
         Y_cat = keras.utils.to_categorical(y, num_classes=num_classes)
         folds = StratifiedKFold(n_splits=10, shuffle=True, random_state=2019)
 
-    with timed_bolck('Training'):
-        for train_idx, test_idx  in  folds.split(X.values, y):
+    with timed_bolck(f'Training#{fold}'):
+        for train_idx, test_idx  in  [list(folds.split(X.values, y))[fold]]:
 
             logger.info(f'Shape train_x.loc[:, input1_col].iloc[:,0]: {X.loc[:, input1_col].iloc[:,0].shape}')
             train_x, train_y, val_x, val_y = \
@@ -143,7 +145,7 @@ def train_base(frac_input=1):
                 his = model.fit([input1, input2], train_y,
                                 validation_data = ([val_x.loc[:, input1_col], np.zeros_like(val_x.loc[:, input1_col])], val_y),
                                 epochs=EPOCHS,  shuffle=True, batch_size=64,
-                                callbacks=[Cal_acc(val_x, y.iloc[test_idx] )]
+                                callbacks=[Cal_acc(val_x, y.iloc[test_idx], fold )]
                           #steps_per_epoch=1000, validation_steps=10
                           )
 
@@ -151,16 +153,14 @@ def train_base(frac_input=1):
 
             #gen_sub(model, X_test, sn)
 
-            break
-
     return his
 
 class Cal_acc(Callback):
 
-    def __init__(self, val_x, y ):
+    def __init__(self, val_x, y , fold):
         super(Cal_acc, self).__init__()
         self.val_x , self.y = val_x, y
-
+        self.fold = fold
         self.feature_len = self.val_x.shape[1]
 
         self.max_score = 0
@@ -183,15 +183,15 @@ class Cal_acc(Callback):
 
         res = pd.DataFrame(res, index=self.val_x.index)
         acc1, acc2, total = accuracy(res, self.y)
-
-        return acc1, acc2, total
+        res['label'] = self.y
+        return acc1, acc2, total, res
 
 
 
 
     def on_epoch_end(self, epoch, logs=None):
         print('\n')
-        acc1, acc2, total = self.cal_acc()
+        acc1, acc2, total, train = self.cal_acc()
 
         # if total >= 0.65:
         #     model_path = f'{self.model_folder}/model_{self.feature_len}_{total:6.5f}_{epoch}.h5'
@@ -201,100 +201,103 @@ class Cal_acc(Callback):
         #     self.model.save(model_path)
         #     print(f'weight save to {model_path}')
 
-        threshold = 0.775
+        threshold = 0.78
         if total >=threshold and epoch>=1 and total > self.max_score :
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
-            gen_sub(self.model, f'{self.feature_len}_{total:6.5f}_{epoch}')
+            test = self.gen_sub(self.model, f'{self.feature_len}_{total:6.5f}_{epoch}')
+            self.save_stack_feature(train, test, f'./output/stacking/{self.fold}_{total:6.5f}.h5')
         else:
             logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
 
         self.max_score = max(self.max_score, total)
 
-        logger.info(f'Epoch#{epoch}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
+        logger.info(f'Epochsave_stack_feature#{epoch}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
 
         print('\n')
+
+
         return round(total, 5)
 
+    @staticmethod
+    @timed()
+    def save_stack_feature(train: pd.DataFrame, test: pd.DataFrame, file_path):
+        train.to_hdf(file_path, 'train', mode='a')
+        test.to_hdf(file_path, 'test', mode='a')
+        logger.info(f'OOF file save to :{file_path}')
+        return train, test
+
+    @staticmethod
+    @timed()
+    #./output/model/1562899782/model_6114_0.65403_2.h5
+    def gen_sub(model , info='bert_' , partition_len = 5000):
+
+        global frac
+        _, _, test = get_train_test_bert(frac)
+
+        label2id, id2label = get_label_id()
+        input1_col = [col for col in test.columns if str(col).startswith('bert_')]
+        input2_col = [col for col in test.columns if str(col).startswith('fea_')]
+
+        logger.info(f'Input input1_col:{len(input1_col)}, input2_col:{len(input2_col)}')
+        res_list = []
+        for sn in tqdm(range(1+ len(test)//partition_len), desc=f'{info}:sub:total:{len(test)},partition_len:{partition_len}'):
+            tmp = test.iloc[sn*partition_len: (sn+1)*partition_len]
+            #print('\nbegin tmp\n', tmp.iloc[:3,:3].head())
+            res = model.predict([ tmp.loc[:,input1_col], np.zeros_like(tmp.loc[:,input1_col]) ])
+            res = pd.DataFrame(res, columns=label2id.keys(), index=tmp.index)
+            #print('\nend tmp\n', res.iloc[:3, :3].head())
+            res_list.append(res)
+
+        res = pd.concat(res_list)
+        #print('\nafter concat\n', res.iloc[:3, :3].head())
+        res['id'] = res.index
+        res.index.name = 'id'
+        res['bin'] = res.id.apply(lambda val: int(val.split('_')[1]))
+        #print('\nend res\n', res.iloc[:3, :3].head())
+        res.to_pickle(f'./output/tmp_sub.pkl')
 
 
-@timed()
-#./output/model/1562899782/model_6114_0.65403_2.h5
-def gen_sub(model , info='bert_' , partition_len = 5000):
-
-    global frac
-    _, _, test = get_train_test_bert(frac)
-
-    label2id, id2label = get_label_id()
-    input1_col = [col for col in test.columns if str(col).startswith('bert_')]
-    input2_col = [col for col in test.columns if str(col).startswith('fea_')]
-
-    logger.info(f'Input input1_col:{len(input1_col)}, input2_col:{len(input2_col)}')
-    res_list = []
-    for sn in tqdm(range(1+ len(test)//partition_len), desc=f'{info}:sub:total:{len(test)},partition_len:{partition_len}'):
-        tmp = test.iloc[sn*partition_len: (sn+1)*partition_len]
-        #print('\nbegin tmp\n', tmp.iloc[:3,:3].head())
-        res = model.predict([ tmp.loc[:,input1_col], np.zeros_like(tmp.loc[:,input1_col]) ])
-        res = pd.DataFrame(res, columns=label2id.keys(), index=tmp.index)
-        #print('\nend tmp\n', res.iloc[:3, :3].head())
-        res_list.append(res)
-
-    res = pd.concat(res_list)
-    #print('\nafter concat\n', res.iloc[:3, :3].head())
-    res['id'] = res.index
-    res.index.name = 'id'
-    res['bin'] = res.id.apply(lambda val: int(val.split('_')[1]))
-    #print('\nend res\n', res.iloc[:3, :3].head())
-    res.to_pickle(f'./output/tmp_sub.pkl')
+        res_mean = res.copy(deep=True)
+        res_mean['id'] = res_mean.id.apply(lambda val: val.split('_')[0])
+        res_select = res_mean.groupby('id')['bin'].agg({'bin_max': 'max'})
+        res_select.head()
+        res_select = res_select.loc[res_select.bin_max == 3]
+        res_mean = res_mean.loc[(res_mean.bin == 0)
+                                | ((res_mean.bin == 1) & (res_mean.id.isin(res_select.index)))
+                                ]
+        logger.info(f'Try to cal avg for res_man:\n{res_mean.bin.value_counts()}')
+        res_mean = res_mean.groupby('id').mean()
+        del res_mean['bin']
 
 
-    res_mean = res.copy(deep=True)
-    #print('\nres_mean\n', res_mean.loc[:, ['id']].head(3))
+        res_0 = res.copy(deep=True)
+        res_0 = res_0.loc[res_0.bin == 0]
+        res_0.index  = res_0.id.apply(lambda val: val.split('_')[0])
+        #print('\nres_0\n', res_0.loc[:, ['id', 'bin']].head(3))
 
-    res_mean['id'] = res_mean.id.apply(lambda val: val.split('_')[0])
+        del res_0['bin']
+        del res_0['id']
 
-    res_select = res_mean.groupby('id')['bin'].agg({'bin_max': 'max'})
-    res_select.head()
-    res_select = res_select.loc[res_select.bin_max == 3]
+        for name, res in [('single',res_0), ('mean', res_mean)]:
 
+            res['label1'] = res.iloc[:, :num_classes].idxmax(axis=1)
 
-    res_mean = res_mean.loc[(res_mean.bin == 0)
-                            | ((res_mean.bin == 1) & (res_mean.id.isin(res_select.index)))
-                            ]
+            # Exclude top#1
+            for index, col in res.label1.items():
+                res.loc[index, col] = np.nan
 
-    logger.info(f'Try to cal avg for res_man:\n{res_mean.bin.value_counts()}')
-
-    res_mean = res_mean.groupby('id').mean()
-    del res_mean['bin']
-
-
-    res_0 = res.copy(deep=True)
-    res_0 = res_0.loc[res_0.bin == 0]
-    res_0.index  = res_0.id.apply(lambda val: val.split('_')[0])
-    #print('\nres_0\n', res_0.loc[:, ['id', 'bin']].head(3))
-
-    del res_0['bin']
-    del res_0['id']
-
-    for name, res in [('single',res_0), ('mean', res_mean)]:
-
-        res['label1'] = res.iloc[:, :num_classes].idxmax(axis=1)
-
-        # Exclude top#1
-        for index, col in res.label1.items():
-            res.loc[index, col] = np.nan
-
-        res['label2'] = res.iloc[:, :num_classes].idxmax(axis=1)
+            res['label2'] = res.iloc[:, :num_classes].idxmax(axis=1)
 
 
-        for col in ['label1','label2']:
-            res[col] = res[col].replace(id2label)
+            for col in ['label1','label2']:
+                res[col] = res[col].replace(id2label)
 
-        info = info.replace('.','')
-        sub_file = f'./output/sub/v2_{info}_{name}.csv'
-        res[['label1', 'label2']].to_csv(sub_file)
-        logger.info(f'Sub file save to :{sub_file}')
+            info = info.replace('.','')
+            sub_file = f'./output/sub/v3_{info}_{name}.csv'
+            res[['label1', 'label2']].to_csv(sub_file)
+            logger.info(f'Sub file save to :{sub_file}')
 
-    return res.shape
+        return res_0
 
 if __name__ == '__main__':
     import fire
@@ -303,7 +306,7 @@ if __name__ == '__main__':
 
 """
 
-nohup python -u ./core/bert.py train_base  > bin_0.log 2>&1 &
+nohup python -u ./core/bert.py train_base  > test.log 2>&1 &
 nohup python -u ./core/bert.py train_base  > extend_bert_mean_bin_1.log 2>&1 &
 
 nohup python -u ./core/bert.py boost_train 10 >> boost_1.log 2>&1 &
