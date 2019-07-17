@@ -79,40 +79,63 @@ def get_raw_data():
 
 
 @timed()
-def split_app_des(df, seq_len_input):
-    seq_len = seq_len_input + 128
+def get_app_des_2_ids(data):
+    from core.tokenizer import Tokenizer
+    import codecs
+    token_dict = {}
+    with codecs.open(vocab_path, 'r', 'utf8') as reader:
+        for line in reader:
+            token = line.strip()
+            token_dict[token] = len(token_dict)
+
+    tokenizer = Tokenizer(token_dict)
+
+    def get_ids_from_text(text):
+        ids = tokenizer.convert_tokens_to_ids(text)
+        return [len(ids), ','.join([str(id) for id in ids])]
+
+    with timed_bolck('str to bert format'):
+        # On app_id have multiply type_id
+        data = data.drop_duplicates(['app_id'])
+        ids = np.array(list([get_ids_from_text(text) for text in data.app_des.values.tolist()]))
+
+    data['ids_lens'] = ids[:, 0].astype(int)
+    data['ids_lens_total'] = data['ids_lens']
+
+    data['ids'] = ids[:, 1]
+
+    return data
+
+
+@timed()
+def split_app_des(df, split_len=SEQ_LEN):
+    if 'app_des' in df.columns:
+        del df['app_des']
+    seq_len = split_len - 2
+
     df_list = []
-    df['len_'] = df.app_des.apply(lambda val: len(val))
 
-    split_df = True
+    def split_ids(ids, seq_len, i):
+        ids = ids.split(',')
+        ids = ['101'] + ids[i * seq_len : (i + 1) * seq_len] + ['102']
+        return pd.Series({'ids':','.join(ids), 'ids_lens': len(ids)})
 
-    if split_df:
-        for i in tqdm(range(4), desc='split app des'):
-            tmp = df.loc[(df.len_ >= i * seq_len)].copy()
-            tmp['app_des'] = tmp.app_des.apply(lambda val: val[i * seq_len : (i + 1) * seq_len])
-            tmp['len_'] = tmp.app_des.apply(lambda val: len(val))
-            tmp['bin'] = i
-            tmp['app_id_ex'] = tmp.app_id_ex + '_' + str(i)
 
-            #logger.info(f'\nThere are {len(tmp)} records between [{i*seq_len},  {(i+1)*seq_len}) need to split.')
-            df_list.append(tmp)
-        i += 1
-    else:
-        i = 0
-    #Reset of the DF need to add
-    tmp = df.loc[(df.len_ >= i * seq_len)].copy()
-    tmp['app_des'] = tmp.app_des.apply(lambda val: val[i * seq_len:])
-    tmp['len_'] = tmp.app_des.apply(lambda val: len(val))
-    tmp['bin'] = i
-    tmp['app_id_ex'] = tmp.app_id_ex + '_' + str(i)
-    #logger.info(f'\nThere are {len(tmp)} records between [{(i)*seq_len},  nolimit) need to split.')
+    for i in tqdm(range(4), desc='split app des'):
+        tmp = df.loc[(df.ids_lens > i * seq_len)].copy()
+        if len(tmp)==0:
+            break
+        tmp[['ids', 'ids_lens']] = tmp.ids.apply(lambda val: split_ids(val, seq_len, i))
+        tmp['bin'] = i
+        tmp['app_id_ex'] = tmp.app_id_ex + '_' + str(i)
 
-    df_list.append(tmp)
+        #logger.info(f'\nThere are {len(tmp)} records between [{i*seq_len},  {(i+1)*seq_len}) need to split.')
 
-    logger.info(f'DF#{df.shape} split to {i + 1} groups, with seq_len_input={seq_len_input}, seq_len = {seq_len}')
+        df_list.append(tmp)
+
+    logger.info(f'DF#{df.shape} split to {i + 1} groups, with seq_len_input={seq_len}, seq_len = {seq_len}')
     logger.info(f'The split result is: { [len(df)  for df in df_list] }')
     return pd.concat(df_list, axis=0)
-
 
 
 @lru_cache()
@@ -404,47 +427,33 @@ def get_feature_seq_input_sentences():
 
 
 @timed()
-#@file_cache()
-def get_feature_bert(max_len):
+@file_cache()
+def get_feature_bert():
+
     raw = get_raw_data()
+    data = get_app_des_2_ids(raw)
+    data = split_app_des(data)
 
-    data = split_app_des(raw, max_len + 128)
+    bert = data.ids.str.split(',', expand=True).add_prefix('bert_').fillna(0).astype(int)
 
-    from keras_bert import Tokenizer
-    import codecs
-    token_dict = {}
-    with codecs.open(vocab_path, 'r', 'utf8') as reader:
-        for line in reader:
-            token = line.strip()
-            token_dict[token] = len(token_dict)
 
-    tokenizer = Tokenizer(token_dict)
-
-    def get_ids_from_text(text, max_len):
-        ids, segments = tokenizer.encode(text, max_len=max_len)
-        return ids
-    with timed_bolck('str to bert format'
-                     ''):
-        #On app_id have multiply type_id
-        data = data.drop_duplicates(['app_id', 'bin'])
-        indices = np.array([get_ids_from_text(text, max_len) for text in data.app_des.values.tolist()])
-        bert = pd.DataFrame(indices,index=data.app_id_ex).add_prefix('bert_')
-
-    with timed_bolck('Join bert and raw data'):
+    with timed_bolck(f'Join bert#{bert.shape} and raw#{raw.shape} data'):
         old_shape = bert.shape
 
         bert['app_id'] = data.app_id.values
         bert['app_id_ex'] = data.app_id_ex.values
         bert['bin'] = data.bin.values
         bert['len_'] = data.len_.values
-
-        del raw['app_des']
+        if 'app_des' in raw: del raw['app_des']
         del raw['app_id_ex']
         del raw['len_']
         bert = pd.merge(bert, raw, how='left', on=['app_id'])
 
         bert.index = bert.app_id_ex
-        logger.info(f'Merge extend te shape from {old_shape} to {bert.shape}')
+        logger.info(f'Merge extend shape from {old_shape}, {raw.shape} to {bert.shape}')
+
+    padding_analysis = bert.loc[:, f'bert_127'].value_counts().sort_index()
+    logger.info(f'padding_analysis:\n{padding_analysis}')
     return bert.sort_values(['app_id_ex'], ascending=False)
 
 

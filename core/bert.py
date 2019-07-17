@@ -22,7 +22,7 @@ frac = 0
 @timed()
 def get_train_test_bert(frac=1):
 
-    data = get_feature_bert(SEQ_LEN)
+    data = get_feature_bert()
 
     max_bin = 0
 
@@ -33,13 +33,17 @@ def get_train_test_bert(frac=1):
 
     data = data.loc[ (data.bin == 0) | (data['len_'] >= 100) ]
 
-    logger.info(f'Bin distribution:\n{data.bin.value_counts().sort_index()}')
+    logger.info(f'Total Bin distribution:\n{data.bin.value_counts().sort_index()}')
 
-    #data = data.sort_index()
+    data = data.sort_index()
+    logger.info(f'Head of the data:\n, {data.iloc[:3,:3]}')
+
     train_data = data.loc[pd.notna(data.type_id)].sample(frac=frac, random_state=2019)
     labels = train_data.type_id.values.tolist()
+    logger.info(f'Train Bin distribution:\n{train_data.bin.value_counts().sort_index()}')
 
     test_data =  data.loc[pd.isna(data.type_id)].sample(frac=frac, random_state=2019)
+    logger.info(f'Test Bin distribution:\n{test_data.bin.value_counts().sort_index()}')
 
     logger.info(f'Train:{train_data.shape} Test:{test_data.shape}, frac:{frac}')
 
@@ -92,7 +96,7 @@ def train_base(frac_input=1, fold=0):
         from keras_bert import load_trained_model_from_checkpoint
 
         model = load_trained_model_from_checkpoint(config_path, checkpoint_path, training=True, seq_len=SEQ_LEN, )
-        model.summary(line_length=120)
+        #model.summary(line_length=120)
 
         from tensorflow.python import keras
         from keras_bert import AdamWarmup, calc_train_steps
@@ -137,7 +141,7 @@ def train_base(frac_input=1, fold=0):
 
             logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
 
-            logger.info(f'NN Input1:{val_x[:3]}')
+            logger.info(f'NN Input1:{train_x[:3]}')
 
             from keras_bert import get_custom_objects
             import tensorflow as tf
@@ -201,17 +205,17 @@ class Cal_acc(Callback):
         #     self.model.save(model_path)
         #     print(f'weight save to {model_path}')
 
-        threshold = 0.78
+        threshold = 0.785
         if total >=threshold and epoch>=1 and total > self.max_score :
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
-            test = self.gen_sub(self.model, f'{self.feature_len}_{total:6.5f}_{epoch}')
-            self.save_stack_feature(train, test, f'./output/stacking/{self.fold}_{total:6.5f}.h5')
+            test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}')
+            self.save_stack_feature(train, test, f'./output/stacking/{self.fold}_{total:7.6f}.h5')
         else:
             logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
 
         self.max_score = max(self.max_score, total)
 
-        logger.info(f'Epochsave_stack_feature#{epoch}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
+        logger.info(f'Epoch#{epoch}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
 
         print('\n')
 
@@ -265,8 +269,9 @@ class Cal_acc(Callback):
         res_mean = res_mean.loc[(res_mean.bin == 0)
                                 | ((res_mean.bin == 1) & (res_mean.id.isin(res_select.index)))
                                 ]
-        logger.info(f'Try to cal avg for res_man:\n{res_mean.bin.value_counts()}')
-        res_mean = res_mean.groupby('id').mean()
+        logger.info(f'Try to cal avg for res_mean:\n{res_mean.bin.value_counts()}')
+        res_mean_len = len(res_mean)
+        res_mean = res_mean.groupby('id').mean().sort_index()
         del res_mean['bin']
 
 
@@ -274,11 +279,11 @@ class Cal_acc(Callback):
         res_0 = res_0.loc[res_0.bin == 0]
         res_0.index  = res_0.id.apply(lambda val: val.split('_')[0])
         #print('\nres_0\n', res_0.loc[:, ['id', 'bin']].head(3))
-
+        res_0 = res_0.sort_index()
         del res_0['bin']
         del res_0['id']
 
-        for name, res in [('single',res_0), ('mean', res_mean)]:
+        for name, res in [('single',res_0), (f'mean_{res_mean_len}', res_mean)]:
 
             res['label1'] = res.iloc[:, :num_classes].idxmax(axis=1)
 
@@ -293,7 +298,7 @@ class Cal_acc(Callback):
                 res[col] = res[col].replace(id2label)
 
             info = info.replace('.','')
-            sub_file = f'./output/sub/v3_{info}_{name}.csv'
+            sub_file = f'./output/sub/v18_{info}_{name}.csv'
             res[['label1', 'label2']].to_csv(sub_file)
             logger.info(f'Sub file save to :{sub_file}')
 
@@ -306,6 +311,7 @@ if __name__ == '__main__':
 
 """
 
+nohup python -u ./core/bert.py train_base 0.1  > test.log 2>&1 &
 nohup python -u ./core/bert.py train_base  > test.log 2>&1 &
 nohup python -u ./core/bert.py train_base  > extend_bert_mean_bin_1.log 2>&1 &
 
