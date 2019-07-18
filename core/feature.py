@@ -433,7 +433,7 @@ def get_feature_seq_input_sentences():
 
 
 @timed()
-#@file_cache()
+@file_cache()
 def get_feature_bert():
 
     raw = get_raw_data()
@@ -496,6 +496,23 @@ def get_feature_lda(n_topics):
 def batch_manual():
     for n_topics in range(10, 100, 10):
         get_feature_manual(n_topics)
+
+
+def get_args():
+    parser = argparse.ArgumentParser()
+    # parser.set_defaults(func=test_abc)
+
+    parser.add_argument("--fold", type=int, default=0, help="Split fold")
+    parser.add_argument("--max_bin", type=int, default=0, help="Split fold")
+    parser.add_argument("--frac", type=float, default=1.0, help="How many sample will pick")
+
+    subparsers = parser.add_subparsers()
+
+    hello_parser = subparsers.add_parser('train_base')
+    from core.bert import train_base
+    hello_parser.set_defaults(func=train_base)
+    args = parser.parse_args()
+    return args
 
 if __name__ == '__main__':
     import fire

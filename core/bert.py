@@ -4,7 +4,7 @@ from multiprocessing import Process
 
 from sklearn.model_selection import StratifiedKFold
 
-from core.callback import *
+
 from tensorflow.python.keras.callbacks import Callback
 
 from core.feature import *
@@ -15,16 +15,16 @@ import os
 
 os.environ['TF_KERAS'] = '1'
 
-frac = 0
 
 #Batch size, MAX_len+ex_length, Manual, Manual GP feature cnt, frac
 @lru_cache()
 @timed()
-def get_train_test_bert(frac=1):
+def get_train_test_bert():
+
+    frac = get_args().frac
+    max_bin = get_args().max_bin
 
     data = get_feature_bert()
-
-    max_bin = 0
 
     #Keep all the bin group, if it's test data
     data = data.loc[(data.bin<=max_bin) | (pd.isna(data.type_id))]
@@ -79,15 +79,16 @@ def boost_train(boost=10):
 
 
 @timed()
-def train_base(frac_input=1, fold=0):
-    global frac
-    frac = frac_input
+def train_base(args):
+    #frac = args.frac
+    fold = args.fold
+
     BATCH_SIZE = 128
     EPOCHS = 4
     LR = 1e-4
 
     with timed_bolck(f'Prepare train data#{BATCH_SIZE}'):
-        X, y, _ = get_train_test_bert(frac)
+        X, y, _ = get_train_test_bert()
 
 
 
@@ -141,7 +142,7 @@ def train_base(frac_input=1, fold=0):
 
             logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
 
-            logger.info(f'NN Input1:{train_x[:3]}')
+            logger.info(f'NN train_x:{train_x[:3]}')
 
             from keras_bert import get_custom_objects
             import tensorflow as tf
@@ -240,8 +241,8 @@ class Cal_acc(Callback):
     #./output/model/1562899782/model_6114_0.65403_2.h5
     def gen_sub(model , info='bert_' , partition_len = 5000):
 
-        global frac
-        _, _, test = get_train_test_bert(frac)
+        #frac = get_args().frac
+        _, _, test = get_train_test_bert()
 
         label2id, id2label = get_label_id()
         input1_col = [col for col in test.columns if str(col).startswith('bert_')]
@@ -303,16 +304,15 @@ class Cal_acc(Callback):
                 res[col] = res[col].replace(id2label)
 
             info = info.replace('.','')
-            sub_file = f'./output/sub/v18_{info}_{name}.csv'
+            sub_file = f'./output/sub/v19_{info}_{name}.csv'
             res[['label1', 'label2']].to_csv(sub_file)
             logger.info(f'Sub file save to :{sub_file}')
 
         return res_0
 
 if __name__ == '__main__':
-    import fire
-    fire.Fire()
-
+    args = get_args()
+    args.func(args)
 
 """
 
