@@ -205,7 +205,7 @@ class Cal_acc(Callback):
         #     self.model.save(model_path)
         #     print(f'weight save to {model_path}')
 
-        threshold = 0.785
+        threshold = 0.786
         if total >=threshold and epoch>=1 and total > self.max_score :
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}')
