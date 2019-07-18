@@ -33,7 +33,7 @@ def get_train_test_bert(frac=1):
 
     data = data.loc[ (data.bin == 0) | (data['len_'] >= 100) ]
 
-    logger.info(f'Total Bin distribution:\n{data.bin.value_counts().sort_index()}')
+    logger.info(f'Train max_bin:{max_bin},Total Bin distribution:\n{data.bin.value_counts().sort_index()}')
 
     data = data.sort_index()
     logger.info(f'Head of the data:\n, {data.iloc[:3,:3]}')
@@ -169,6 +169,8 @@ class Cal_acc(Callback):
 
         self.max_score = 0
 
+        self.score_list = []
+
         import time, os
         self.batch_id = round(time.time())
         self.model_folder = f'./output/model/{self.batch_id}/'
@@ -191,11 +193,14 @@ class Cal_acc(Callback):
         return acc1, acc2, total, res
 
 
-
+    def on_train_end(self, logs=None):
+        logger.info(f'Train max:{max(self.score_list)}, at {np.argmax(self.score_list)}/{len(self.score_list)}, Train his:{self.score_list}')
 
     def on_epoch_end(self, epoch, logs=None):
         print('\n')
         acc1, acc2, total, train = self.cal_acc()
+
+        self.score_list.append(round(total,6))
 
         # if total >= 0.65:
         #     model_path = f'{self.model_folder}/model_{self.feature_len}_{total:6.5f}_{epoch}.h5'
@@ -205,7 +210,7 @@ class Cal_acc(Callback):
         #     self.model.save(model_path)
         #     print(f'weight save to {model_path}')
 
-        threshold = 0.786
+        threshold = 0.78
         if total >=threshold and epoch>=1 and total > self.max_score :
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}')
