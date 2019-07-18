@@ -80,7 +80,6 @@ def get_raw_data():
 
 @timed()
 def get_app_des_2_ids(data):
-    from core.tokenizer import Tokenizer
     import codecs
     token_dict = {}
     with codecs.open(vocab_path, 'r', 'utf8') as reader:
@@ -88,10 +87,17 @@ def get_app_des_2_ids(data):
             token = line.strip()
             token_dict[token] = len(token_dict)
 
+
+
+    from keras_bert import Tokenizer
     tokenizer = Tokenizer(token_dict)
+    def convert_tokens_to_ids(tokens):
+        tokens = tokenizer._tokenize(tokens)
+        token_ids = tokenizer._convert_tokens_to_ids(tokens)
+        return token_ids
 
     def get_ids_from_text(text):
-        ids = tokenizer.convert_tokens_to_ids(text)
+        ids = convert_tokens_to_ids(text)
         return [len(ids), ','.join([str(id) for id in ids])]
 
     with timed_bolck('str to bert format'):
@@ -427,7 +433,7 @@ def get_feature_seq_input_sentences():
 
 
 @timed()
-@file_cache()
+#@file_cache()
 def get_feature_bert():
 
     raw = get_raw_data()
