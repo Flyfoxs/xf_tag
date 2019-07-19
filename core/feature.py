@@ -503,7 +503,8 @@ def get_args():
     # parser.set_defaults(func=test_abc)
 
     parser.add_argument("--fold", type=int, default=0, help="Split fold")
-    parser.add_argument("--max_bin", type=int, default=0, help="Split fold")
+    parser.add_argument("--max_bin", type=int, default=0, help="How many bin need to train")
+    parser.add_argument("--epochs", type=int, default=3, help="How many epoch is need")
     parser.add_argument("--frac", type=float, default=1.0, help="How many sample will pick")
 
     subparsers = parser.add_subparsers()

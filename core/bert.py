@@ -82,9 +82,9 @@ def boost_train(boost=10):
 def train_base(args):
     #frac = args.frac
     fold = args.fold
+    EPOCHS = args.epochs
 
     BATCH_SIZE = 128
-    EPOCHS = 4
     LR = 1e-4
 
     with timed_bolck(f'Prepare train data#{BATCH_SIZE}'):
@@ -171,6 +171,7 @@ class Cal_acc(Callback):
         self.max_score = 0
 
         self.score_list = []
+        self.gen_file = False
 
         import time, os
         self.batch_id = round(time.time())
@@ -195,7 +196,7 @@ class Cal_acc(Callback):
 
 
     def on_train_end(self, logs=None):
-        logger.info(f'Train max:{max(self.score_list)}, at {np.argmax(self.score_list)}/{len(self.score_list)}, Train his:{self.score_list}')
+        logger.info(f'Train max:{max(self.score_list)}, at {np.argmax(self.score_list)}/{len(self.score_list)-1}, Train his:{self.score_list}, gen_file:{self.gen_file}')
 
     def on_epoch_end(self, epoch, logs=None):
         print('\n')
@@ -211,11 +212,14 @@ class Cal_acc(Callback):
         #     self.model.save(model_path)
         #     print(f'weight save to {model_path}')
 
-        threshold = 0.78
-        if total >=threshold and epoch>=1 and total > self.max_score :
+
+        threshold_map = {0:0.785, 1:0.77, 2:0.77, 3:0.77, 4:0.78}
+        threshold = threshold_map[self.fold]
+        if ( total >=threshold and epoch>=1 and total > self.max_score) or (get_args().frac<=0.1):
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
+            self.gen_file=True
             test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}')
-            self.save_stack_feature(train, test, f'./output/stacking/{self.fold}_{total:7.6f}.h5')
+            self.save_stack_feature(train, test, f'./output/stacking/{self.fold}_{total:7.6f}_{len(train)}.h5')
         else:
             logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
 
@@ -246,9 +250,9 @@ class Cal_acc(Callback):
 
         label2id, id2label = get_label_id()
         input1_col = [col for col in test.columns if str(col).startswith('bert_')]
-        input2_col = [col for col in test.columns if str(col).startswith('fea_')]
+        input3_col = [col for col in test.columns if str(col).startswith('fea_')]
 
-        logger.info(f'Input input1_col:{len(input1_col)}, input2_col:{len(input2_col)}')
+        logger.info(f'Input input1_col:{len(input1_col)}, input3_col:{len(input3_col)}')
         res_list = []
         for sn in tqdm(range(1+ len(test)//partition_len), desc=f'{info}:sub:total:{len(test)},partition_len:{partition_len}'):
             tmp = test.iloc[sn*partition_len: (sn+1)*partition_len]
@@ -290,6 +294,8 @@ class Cal_acc(Callback):
         del res_0['id']
 
         for name, res in [('single',res_0), (f'mean_{res_mean_len}', res_mean)]:
+            res = res.copy()
+            #logger.info(f'{name} Check:\n{res.iloc[:3,:num_classes].sum(axis=1)}')
 
             res['label1'] = res.iloc[:, :num_classes].idxmax(axis=1)
 
@@ -308,6 +314,7 @@ class Cal_acc(Callback):
             res[['label1', 'label2']].to_csv(sub_file)
             logger.info(f'Sub file save to :{sub_file}')
 
+        logger.info(f'res_0 Check:\n{res_0.iloc[:3, :num_classes].sum(axis=1)}')
         return res_0
 
 if __name__ == '__main__':
@@ -316,7 +323,7 @@ if __name__ == '__main__':
 
 """
 
-nohup python -u ./core/bert.py train_base 0.1  > test.log 2>&1 &
+nohup python -u ./core/bert.py --frac=0.1  train_base  > test.log 2>&1 &
 nohup python -u ./core/bert.py train_base  > test.log 2>&1 &
 nohup python -u ./core/bert.py train_base  > extend_bert_mean_bin_1.log 2>&1 &
 
