@@ -148,7 +148,7 @@ def train_base(frac=1):
 
     #get_feature_manual.cache_clear()
     Y_cat = keras.utils.to_categorical(y, num_classes=len(get_app_type_ex()))
-    folds = StratifiedKFold(n_splits=10, shuffle=True, random_state=2019)
+    folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=2019)
     for train_idx, test_idx  in  folds.split(X.values, y):
 
         train_x, train_y, val_x, val_y = \

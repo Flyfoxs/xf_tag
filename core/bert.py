@@ -126,7 +126,7 @@ def train_base(args):
 
         #get_feature_manual.cache_clear()
         Y_cat = keras.utils.to_categorical(y, num_classes=num_classes)
-        folds = StratifiedKFold(n_splits=10, shuffle=True, random_state=2019)
+        folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=2019)
 
     with timed_bolck(f'Training#{fold}'):
         for train_idx, test_idx  in  [list(folds.split(X.values, y))[fold]]:
@@ -187,12 +187,12 @@ class Cal_acc(Callback):
         input1_col = [col for col in self.val_x.columns if str(col).startswith('bert_')]
         #input2_col = [col for col in self.val_x.columns if str(col).startswith('fea_')]
         #model = self.model
-        res = self.model.predict([self.val_x.loc[:,input1_col], np.zeros_like(self.val_x.loc[:,input1_col])])
+        val = self.model.predict([self.val_x.loc[:,input1_col], np.zeros_like(self.val_x.loc[:,input1_col])])
 
-        res = pd.DataFrame(res, index=self.val_x.index)
-        acc1, acc2, total = accuracy(res, self.y)
-        res['label'] = self.y
-        return acc1, acc2, total, res
+        val = pd.DataFrame(val, index=self.val_x.index)
+        acc1, acc2, total = accuracy(val, self.y)
+        val['label'] = self.y
+        return acc1, acc2, total, val
 
 
     def on_train_end(self, logs=None):
@@ -200,7 +200,7 @@ class Cal_acc(Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         print('\n')
-        acc1, acc2, total, train = self.cal_acc()
+        acc1, acc2, total, val = self.cal_acc()
 
         self.score_list.append(round(total,6))
 
@@ -221,8 +221,8 @@ class Cal_acc(Callback):
         if ( total >=threshold and epoch>=1 and total > self.max_score) or (get_args().frac<=0.1):
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             self.gen_file=True
-            test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}')
-            self.save_stack_feature(train, test, f'./output/stacking/{self.fold}_{total:7.6f}_{len(train)}.h5')
+            test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}_f{self.fold}')
+            self.save_stack_feature(val, test, f'./output/stacking/{self.fold}_{total:7.6f}_{len(val)}.h5')
         else:
             logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
 
