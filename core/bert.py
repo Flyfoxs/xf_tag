@@ -213,8 +213,11 @@ class Cal_acc(Callback):
         #     print(f'weight save to {model_path}')
 
 
-        threshold_map = {0:0.785, 1:0.77, 2:0.77, 3:0.77, 4:0.78}
-        threshold = threshold_map[self.fold]
+        #threshold_map = {0:0.785, 1:0.77, 2:0.77, 3:0.77, 4:0.78}
+        top_cnt =2
+        top_score = self._get_top_score(self.fold)[:top_cnt]
+        logger.info(f'The top#{top_cnt} score for fold#{self.fold} is:{top_score}')
+        threshold = top_score[-1]
         if ( total >=threshold and epoch>=1 and total > self.max_score) or (get_args().frac<=0.1):
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             self.gen_file=True
@@ -316,6 +319,13 @@ class Cal_acc(Callback):
 
         logger.info(f'res_0 Check:\n{res_0.iloc[:3, :num_classes].sum(axis=1)}')
         return res_0
+
+    @staticmethod
+    def _get_top_score(fold):
+        from glob import glob
+        file_list = sorted(glob(f'./output/stacking/{fold}_*.h5'), reverse=True)
+        score_list = [float(file.split('_')[1].replace('.h5', '')) for file in file_list]
+        return score_list if score_list else [0]
 
 if __name__ == '__main__':
     args = get_args()
