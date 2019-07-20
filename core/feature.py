@@ -316,6 +316,7 @@ def load_embedding_gensim(path_txt):
 
 @timed()
 def accuracy(res, y):
+    res = res.copy()
     id_cnt = res.shape[1]
 
     res['label1'] = res.iloc[:, :id_cnt].idxmax(axis=1)
@@ -327,8 +328,8 @@ def accuracy(res, y):
 
     res['label2'] = res.iloc[:, :id_cnt].idxmax(axis=1)
 
-    acc1 = sum(res['label1'].values == y.values) / len(res)
-    acc2 = sum(res['label2'].values == y.values) / len(res)
+    acc1 = sum(res['label1'].values.astype(int) == y.values.astype(int)) / len(res)
+    acc2 = sum(res['label2'].values.astype(int) == y.values.astype(int)) / len(res)
 
     return acc1, acc2, acc1+acc2
 
@@ -451,11 +452,11 @@ def get_feature_bert():
         bert['bin'] = data.bin.values
         bert['len_'] = data.len_.values
         if 'app_des' in raw: del raw['app_des']
-        del raw['app_id_ex']
+        del bert['app_id_ex']
         del raw['len_']
         bert = pd.merge(bert, raw, how='left', on=['app_id'])
 
-        bert.index = bert.app_id_ex
+        bert.index = bert.app_id_ex.astype(str) + '_' + bert.bin.astype(str)
         logger.info(f'Merge extend shape from {old_shape}, {raw.shape} to {bert.shape}')
 
     padding_analysis = bert.loc[:, f'bert_127'].value_counts().sort_index()
@@ -509,9 +510,14 @@ def get_args():
 
     subparsers = parser.add_subparsers()
 
-    hello_parser = subparsers.add_parser('train_base')
+    bert_parser = subparsers.add_parser('train_base')
     from core.bert import train_base
-    hello_parser.set_defaults(func=train_base)
+    bert_parser.set_defaults(func=train_base)
+
+    lgb_parser = subparsers.add_parser('train_ex')
+    from core.lgb import train_ex
+    lgb_parser.set_defaults(func=train_ex)
+
     args = parser.parse_args()
     return args
 
