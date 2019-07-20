@@ -11,6 +11,7 @@ word2vec_tx_mini = './input/mini_tx.kv'
 
 num_classes = 152
 
+oof_prefix = 'v2'
 
 ####Bert Config
 import os

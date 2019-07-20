@@ -6,10 +6,11 @@ from core.feature import *
 
 def get_top_file(fold):
     from glob import glob
-    file_list = sorted(glob(f'./output/stacking/v?_{fold}_*.h5'), reverse=True)
+    file_list = sorted(glob(f'./output/stacking/{oof_prefix}_{fold}_*.h5'), reverse=True)
     return file_list
 
-
+@lru_cache()
+@timed()
 def get_feature_oof(top):
     file_list = []
     for fold in range(5):
@@ -28,10 +29,16 @@ def get_feature_oof(top):
 
     train = pd.concat(train_list)
     train = train.groupby(train.index).mean().sort_index()
+    label2id, id2label = get_label_id()
+    train.columns = [id2label[col] if col in id2label else col  for col in train.columns ]
     train['bin'] = pd.Series(train.index).apply(lambda val: val[-1]).values
+    train['app_id_ex'] = pd.Series(train.index).apply(lambda val: '_'.join(val.split('_')[:-1])).values
+    train['app_id'] = pd.Series(train.index).apply(lambda val: val.split('_')[0]).values
 
     test = pd.concat(test_list)
     test = test.groupby(test.index).mean().sort_index()
+    test['app_id_ex'] = test.index
+    test['app_id'] = test.index
 
     oof = pd.concat([train, test])
 

@@ -21,26 +21,28 @@ def get_train_test_lgb():
     logger.info(f'Shape before merge:raw:{raw.shape}, data:{data.shape}')
     data = pd.merge(data, raw, how='left', on='app_id')
     logger.info(f'Shape after merge data:{data.shape}')
-    data.index = data.app_id_ex
-    data['bin'] = np.nan
+
+    #data.index = data.app_id_ex
+    #data['bin'] = np.nan
 
     from core.ensemble import get_feature_oof
 
-    # oof = get_feature_oof(2).iloc[:, :num_classes].add_prefix('fea_oof')
-    # oof['bin'] = get_feature_oof(2)['bin']
-    # oof['app_id_ex_bin'] = oof.index
-    # oof['app_id_ex'] = pd.Series(oof.index).apply(lambda val: val[:-2]).values
-    # oof['app_id'] = pd.Series(oof.index).apply(lambda val: val.split('_')[0]).values
-    #
-    # logger.info(f'Shape before merge:oof:{oof.shape}, data:{data.shape}')
-    #
-    # data = pd.merge(data, oof, how='inner', on='app_id')
-    # logger.info(f'Shape after merge oof and data:{data.shape}')
+    top_file = 2
+    oof = get_feature_oof(top_file).iloc[:, :num_classes].add_prefix('fea_oof')
+    oof['bin'] = get_feature_oof(top_file)['bin']
+    oof['app_id_ex'] = get_feature_oof(top_file)['app_id_ex']
+    oof['app_id'] = get_feature_oof(top_file)['app_id']
+    oof['app_id_ex_bin'] = oof.index
+
+    logger.info(f'Shape before merge:oof:{oof.shape}, data:{data.shape}')
+
+    data = pd.merge(data, oof, how='inner', on='app_id_ex')
+    logger.info(f'Shape after merge oof and data:{data.shape}')
 
     # if 'app_des' in raw: del raw['app_des']
     # if 'app_id' in raw: del raw['app_id']
     # del raw['len_']
-    logger.info(f'Shape before merge:oof:{raw.shape}, data:{data.shape}')
+    #logger.info(f'Shape before merge:oof:{raw.shape}, data:{data.shape}')
     #data.index = data.app_id_ex_bin
     # data['app_id_ex_bk'] = data['app_id_ex']
     # data['app_id_ex'] = data['app_id_ex'].str[:-2]

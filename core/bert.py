@@ -189,7 +189,8 @@ class Cal_acc(Callback):
         #model = self.model
         val = self.model.predict([self.val_x.loc[:,input1_col], np.zeros_like(self.val_x.loc[:,input1_col])])
 
-        val = pd.DataFrame(val, index=self.val_x.index)
+        label2id, id2label = get_label_id()
+        val = pd.DataFrame(val, columns=label2id.keys(), index=self.val_x.index)
         acc1, acc2, total = accuracy(val, self.y)
         val['label'] = self.y
         return acc1, acc2, total, val
@@ -222,7 +223,7 @@ class Cal_acc(Callback):
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             self.gen_file=True
             test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}_f{self.fold}')
-            self.save_stack_feature(val, test, f'./output/stacking/{self.fold}_{total:7.6f}_{len(val)}.h5')
+            self.save_stack_feature(val, test, f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len(val)}.h5')
         else:
             logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
 
@@ -269,9 +270,11 @@ class Cal_acc(Callback):
         #print('\nafter concat\n', res.iloc[:3, :3].head())
         res['id'] = res.index
         res.index.name = 'id'
+        res.to_pickle(f'./output/tmp_sub.pkl')
+
         res['bin'] = res.id.apply(lambda val: int(val.split('_')[1]))
         #print('\nend res\n', res.iloc[:3, :3].head())
-        res.to_pickle(f'./output/tmp_sub.pkl')
+
 
 
         res_mean = res.copy(deep=True)
@@ -323,8 +326,9 @@ class Cal_acc(Callback):
     @staticmethod
     def _get_top_score(fold):
         from glob import glob
-        file_list = sorted(glob(f'./output/stacking/{fold}_*.h5'), reverse=True)
-        score_list = [float(file.split('_')[1].replace('.h5', '')) for file in file_list]
+        file_list = sorted(glob(f'./output/stacking/{oof_prefix}_{fold}_*.h5'), reverse=True)
+        score_list = [float(file.split('_')[2].replace('.h5', '')) for file in file_list]
+        logger.info(f'Score list for {fold} is {score_list}')
         return score_list if score_list else [0]
 
 if __name__ == '__main__':
@@ -334,7 +338,12 @@ if __name__ == '__main__':
 """
 
 nohup python -u ./core/bert.py --frac=0.1  train_base  > test.log 2>&1 &
+
+
+nohup python -u ./core/bert.py --fold=2 train_base  > test_4.log 2>&1 &
+
 nohup python -u ./core/bert.py train_base  > test.log 2>&1 &
+
 nohup python -u ./core/bert.py train_base  > extend_bert_mean_bin_1.log 2>&1 &
 
 nohup python -u ./core/bert.py boost_train 10 >> boost_1.log 2>&1 &
