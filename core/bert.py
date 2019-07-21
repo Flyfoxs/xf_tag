@@ -126,33 +126,34 @@ def train_base(args):
 
         #get_feature_manual.cache_clear()
         Y_cat = keras.utils.to_categorical(y, num_classes=num_classes)
-        folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=2019)
+        #folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=2019)
 
     with timed_bolck(f'Training#{fold}'):
-        for train_idx, test_idx  in  [list(folds.split(X.values, y))[fold]]:
+        from core.split import split_df_by_index
+        train_idx, test_idx = split_df_by_index(pd.Series(X.index),fold)
 
-            logger.info(f'Shape train_x.loc[:, input1_col].iloc[:,0]: {X.loc[:, input1_col].iloc[:,0].shape}')
-            train_x, train_y, val_x, val_y = \
-                X.iloc[train_idx], Y_cat[train_idx], X.iloc[test_idx], Y_cat[test_idx]
+        logger.info(f'Shape train_x.loc[:, input1_col].iloc[:,0]: {X.loc[:, input1_col].iloc[:,0].shape}')
+        train_x, train_y, val_x, val_y = \
+            X.iloc[train_idx], Y_cat[train_idx], X.iloc[test_idx], Y_cat[test_idx]
 
-            logger.info(f'get_train_test output: train_x:{train_x.shape}, train_y:{train_y.shape}, val_x:{val_x.shape} ')
-            #for sn in range(5):
-            input1 = train_x.loc[:, input1_col]#.astype(np.float32)
-            input2 = np.zeros_like(input1)#.astype(np.int8)
+        logger.info(f'get_train_test output: train_x:{train_x.shape}, train_y:{train_y.shape}, val_x:{val_x.shape} ')
+        #for sn in range(5):
+        input1 = train_x.loc[:, input1_col]#.astype(np.float32)
+        input2 = np.zeros_like(input1)#.astype(np.int8)
 
-            logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
+        logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
 
-            logger.info(f'NN train_x:{train_x[:3]}')
+        logger.info(f'NN train_x:{train_x[:3]}')
 
-            from keras_bert import get_custom_objects
-            import tensorflow as tf
-            with tf.keras.utils.custom_object_scope(get_custom_objects()):
-                his = model.fit([input1, input2], train_y,
-                                validation_data = ([val_x.loc[:, input1_col], np.zeros_like(val_x.loc[:, input1_col])], val_y),
-                                epochs=EPOCHS,  shuffle=True, batch_size=64,
-                                callbacks=[Cal_acc(val_x, y.iloc[test_idx], fold )]
-                          #steps_per_epoch=1000, validation_steps=10
-                          )
+        from keras_bert import get_custom_objects
+        import tensorflow as tf
+        with tf.keras.utils.custom_object_scope(get_custom_objects()):
+            his = model.fit([input1, input2], train_y,
+                            validation_data = ([val_x.loc[:, input1_col], np.zeros_like(val_x.loc[:, input1_col])], val_y),
+                            epochs=EPOCHS,  shuffle=True, batch_size=64,
+                            callbacks=[Cal_acc(val_x, y.iloc[test_idx], fold )]
+                      #steps_per_epoch=1000, validation_steps=10
+                      )
 
 
 
@@ -191,9 +192,24 @@ class Cal_acc(Callback):
 
         label2id, id2label = get_label_id()
         val = pd.DataFrame(val, columns=label2id.keys(), index=self.val_x.index)
-        acc1, acc2, total = accuracy(val, self.y)
         val['label'] = self.y
-        return acc1, acc2, total, val
+        res_val = val.copy()
+        # res_val.to_pickle(f'./output/tmp_res_val.pkl')
+        # logger.info(f'Debug file: save to ./output/tmp_res_val.pkl')
+
+        val['bin'] = pd.Series(val.index).str[-1].values.astype(int)
+
+        logger.info(f'val bin:{val.bin.value_counts()}')
+        #y2['bin'] = pd.Series(y2.index).str[-1].values.astype(int)
+        for bin in [2, 1, 0]:
+            if bin in val['bin'].values:
+                tmp_val = val.loc[val.bin==bin].copy()
+                tmp_y   = self.y.loc[val.bin==bin].copy()
+                acc1, acc2, total = accuracy(tmp_val, tmp_y)
+                logger.info(f'Val#{len(tmp_val)}, bin#{bin}, acc1:{acc1}, acc2:{acc2}, total:<<<{total}>>>')
+            else:
+                logger.info(f'Can not find bin:{bin} in val')
+        return acc1, acc2, total, res_val
 
 
     def on_train_end(self, logs=None):
@@ -217,19 +233,19 @@ class Cal_acc(Callback):
         #threshold_map = {0:0.785, 1:0.77, 2:0.77, 3:0.77, 4:0.78}
         top_cnt =2
         top_score = self._get_top_score(self.fold)[:top_cnt]
-        logger.info(f'The top#{top_cnt} score for fold#{self.fold} is:{top_score}')
+        logger.info(f'The top#{top_cnt} score for oof:{oof_prefix}, fold#{self.fold} is:{top_score}')
         threshold = top_score[-1]
         if ( total >=threshold and epoch>=1 and total > self.max_score) or (get_args().frac<=0.1):
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             self.gen_file=True
             test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}_f{self.fold}')
-            self.save_stack_feature(val, test, f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len(val)}.h5')
+            self.save_stack_feature(val, test, f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len(val)}_{get_args().max_bin}.h5')
         else:
             logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
 
         self.max_score = max(self.max_score, total)
 
-        logger.info(f'Epoch#{epoch}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
+        logger.info(f'Epoch#{epoch}, oof:{oof_prefix}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
 
         print('\n')
 
@@ -267,6 +283,7 @@ class Cal_acc(Callback):
             res_list.append(res)
 
         res = pd.concat(res_list)
+        raw_predict = res.copy()
         #print('\nafter concat\n', res.iloc[:3, :3].head())
         res['id'] = res.index
         res.index.name = 'id'
@@ -296,8 +313,7 @@ class Cal_acc(Callback):
         res_0.index  = res_0.id.apply(lambda val: val.split('_')[0])
         #print('\nres_0\n', res_0.loc[:, ['id', 'bin']].head(3))
         res_0 = res_0.sort_index()
-        del res_0['bin']
-        del res_0['id']
+        res_0 = res_0.drop(columns=['id','bin'], axis=1, errors='ignore')
 
         for name, res in [('single',res_0), (f'mean_{res_mean_len}', res_mean)]:
             res = res.copy()
@@ -321,7 +337,8 @@ class Cal_acc(Callback):
             logger.info(f'Sub file save to :{sub_file}')
 
         logger.info(f'res_0 Check:\n{res_0.iloc[:3, :num_classes].sum(axis=1)}')
-        return res_0
+
+        return raw_predict #res.drop(columns=['id','bin'], axis=1, errors='ignore')
 
     @staticmethod
     def _get_top_score(fold):
@@ -340,7 +357,9 @@ if __name__ == '__main__':
 nohup python -u ./core/bert.py --frac=0.1  train_base  > test.log 2>&1 &
 
 
-nohup python -u ./core/bert.py --fold=2 train_base  > test_4.log 2>&1 &
+nohup python -u ./core/bert.py --fold=4 --max_bin=2 train_base  > test_4.log 2>&1 &
+
+python -u ./core/bert.py --max_bin=2 train_base 
 
 nohup python -u ./core/bert.py train_base  > test.log 2>&1 &
 

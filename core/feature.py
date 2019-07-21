@@ -133,7 +133,7 @@ def split_app_des(df, split_len=SEQ_LEN):
             break
         tmp[['ids', 'ids_lens']] = tmp.ids.apply(lambda val: split_ids(val, seq_len, i))
         tmp['bin'] = i
-        tmp['app_id_ex'] = tmp.app_id_ex + '_' + str(i)
+        tmp['app_id_ex_bin'] = tmp.app_id_ex + '_' + str(i)
 
         #logger.info(f'\nThere are {len(tmp)} records between [{i*seq_len},  {(i+1)*seq_len}) need to split.')
 
@@ -316,17 +316,24 @@ def load_embedding_gensim(path_txt):
 
 @timed()
 def accuracy(res, y):
-    res = res.copy()
-    id_cnt = res.shape[1]
+    if res is None or len(res)==0:
+        return 0, 0, 0
 
-    res['label1'] = res.iloc[:, :id_cnt].idxmax(axis=1)
+    res = res.copy()
+    y = y.copy()
+
+    _, id2label = get_label_id()
+
+    y = y.replace(id2label)
+
+    res['label1'] = res.iloc[:, :num_classes].idxmax(axis=1)#.values
 
     #Exclude top#1
     for index, col in res.label1.items():
         #logger.info(f'top#1 is {index}, {col}')
         res.loc[index, col] = np.nan
 
-    res['label2'] = res.iloc[:, :id_cnt].idxmax(axis=1)
+    res['label2'] = res.iloc[:, :num_classes].idxmax(axis=1)#.values
 
     acc1 = sum(res['label1'].values.astype(int) == y.values.astype(int)) / len(res)
     acc2 = sum(res['label2'].values.astype(int) == y.values.astype(int)) / len(res)
@@ -449,6 +456,7 @@ def get_feature_bert():
 
         bert['app_id'] = data.app_id.values
         bert['app_id_ex'] = data.app_id_ex.values
+        bert['app_id_ex_bin'] = data.app_id_ex_bin.values
         bert['bin'] = data.bin.values
         bert['len_'] = data.len_.values
         if 'app_des' in raw: del raw['app_des']
@@ -456,12 +464,12 @@ def get_feature_bert():
         del raw['len_']
         bert = pd.merge(bert, raw, how='left', on=['app_id'])
 
-        bert.index = bert.app_id_ex.astype(str) + '_' + bert.bin.astype(str)
+        bert.index = bert.app_id_ex_bin
         logger.info(f'Merge extend shape from {old_shape}, {raw.shape} to {bert.shape}')
 
     padding_analysis = bert.loc[:, f'bert_127'].value_counts().sort_index()
     logger.info(f'padding_analysis:\n{padding_analysis}')
-    return bert.sort_values(['app_id_ex'], ascending=False)
+    return bert.sort_values(['app_id_ex_bin'], ascending=False)
 
 
 #6 hours
