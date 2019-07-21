@@ -192,23 +192,30 @@ class Cal_acc(Callback):
 
         label2id, id2label = get_label_id()
         val = pd.DataFrame(val, columns=label2id.keys(), index=self.val_x.index)
-        val['label'] = self.y
+        val['label'] = self.y.astype(int)
         res_val = val.copy()
         # res_val.to_pickle(f'./output/tmp_res_val.pkl')
         # logger.info(f'Debug file: save to ./output/tmp_res_val.pkl')
 
         val['bin'] = pd.Series(val.index).str[-1].values.astype(int)
 
-        logger.info(f'val bin:{val.bin.value_counts()}')
+        logger.info(f'val bin:\n {val.bin.value_counts()}')
         #y2['bin'] = pd.Series(y2.index).str[-1].values.astype(int)
-        for bin in [2, 1, 0]:
-            if bin in val['bin'].values:
-                tmp_val = val.loc[val.bin==bin].copy()
-                tmp_y   = self.y.loc[val.bin==bin].copy()
-                acc1, acc2, total = accuracy(tmp_val, tmp_y)
-                logger.info(f'Val#{len(tmp_val)}, bin#{bin}, acc1:{acc1}, acc2:{acc2}, total:<<<{total}>>>')
+        for bin_list in [[0,1], [0]]:
+            tmp_val = val.loc[val.bin.isin(bin_list)].copy()
+            if len(tmp_val)>0:
+
+                tmp_val['app_id'] = pd.Series(tmp_val.index).apply(lambda val: val.split('_')[0]).values
+                df_len = len(tmp_val)
+                tmp_val = tmp_val.drop_duplicates(['app_id', 'bin'])
+
+                tmp_val_mean = tmp_val.groupby('app_id').mean()
+                tmp_val_max = tmp_val.groupby('app_id').max()
+                for name, df in [('mean', tmp_val_mean), ('max', tmp_val_max)]:
+                    acc1, acc2, total = accuracy(df)
+                    logger.info(f'Val({name})#{len(df)}/{df_len}, bin#{bin_list}, acc1:{acc1}, acc2:{acc2}, total:<<<{total}>>>')
             else:
-                logger.info(f'Can not find bin:{bin} in val')
+                logger.info(f'Can not find bin:{bin_list} in val')
         return acc1, acc2, total, res_val
 
 

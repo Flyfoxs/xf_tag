@@ -315,12 +315,12 @@ def load_embedding_gensim(path_txt):
 
 
 @timed()
-def accuracy(res, y):
+def accuracy(res):
     if res is None or len(res)==0:
         return 0, 0, 0
 
     res = res.copy()
-    y = y.copy()
+    y = res.loc[:,'label'].copy()
 
     _, id2label = get_label_id()
 

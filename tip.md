@@ -13,6 +13,8 @@
 99998 app_desc.dat
 29999 apptype_train.dat
 
+1134  records have multiply type_id
+
 130097 total
 
 

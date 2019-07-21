@@ -33,7 +33,7 @@ def split_df_by_index(index, fold):
     train_gp = train_list[fold]
     val_gp = val_list[fold]
 
-    train_bin = [0]
+    train_bin = list(range(get_args().max_bin))
 
     val_bin= [0,1,2]
 
