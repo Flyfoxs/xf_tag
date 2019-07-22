@@ -220,7 +220,7 @@ class Cal_acc(Callback):
 
 
     def on_train_end(self, logs=None):
-        logger.info(f'Train max:{max(self.score_list)}, at {np.argmax(self.score_list)}/{len(self.score_list)-1}, Train his:{self.score_list}, gen_file:{self.gen_file}')
+        logger.info(f'Train max:{max(self.score_list):7.6f}, at {np.argmax(self.score_list)}/{len(self.score_list)-1}, Train his:{self.score_list}, max_bin:{get_args().max_bin} gen_file:{self.gen_file}')
 
     def on_epoch_end(self, epoch, logs=None):
         print('\n')
@@ -247,7 +247,7 @@ class Cal_acc(Callback):
             self.gen_file=True
             test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}_f{self.fold}')
             len_raw_val = len(val.loc[val.bin == 0])
-            self.save_stack_feature(val, test, f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val)}_{get_args().max_bin}.h5')
+            self.save_stack_feature(val, test, f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val)}_b{get_args().max_bin}_e{epoch}.h5')
         else:
             logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
 

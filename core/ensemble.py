@@ -88,3 +88,9 @@ def gen_sub_mean(top):
     logger.info(f'Sub file save to :{sub_file}')
 
     return total
+
+
+if __name__== '__main__':
+    from core.ensemble import *
+    sub = gen_sub_mean(2)
+    sub.shape
