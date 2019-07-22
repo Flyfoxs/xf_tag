@@ -320,11 +320,12 @@ def accuracy(res):
         return 0, 0, 0
 
     res = res.copy()
+    #logger.info(f'Accuracy input col:\n{list(res.columns)}')
     y = res.loc[:,'label'].copy()
 
     _, id2label = get_label_id()
 
-    y = y.replace(id2label)
+    #y = y.replace(id2label)
 
     res['label1'] = res.iloc[:, :num_classes].idxmax(axis=1)#.values
 

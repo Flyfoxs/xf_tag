@@ -192,12 +192,12 @@ class Cal_acc(Callback):
 
         label2id, id2label = get_label_id()
         val = pd.DataFrame(val, columns=label2id.keys(), index=self.val_x.index)
-        val['label'] = self.y.astype(int)
+        val['label'] = self.y.astype(int).replace(id2label).astype(int)
+        val['bin'] = pd.Series(val.index).str[-1].values.astype(int)
+        logger.info(f'Head val#label:\n{val.label.head()}')
         res_val = val.copy()
         # res_val.to_pickle(f'./output/tmp_res_val.pkl')
         # logger.info(f'Debug file: save to ./output/tmp_res_val.pkl')
-
-        val['bin'] = pd.Series(val.index).str[-1].values.astype(int)
 
         logger.info(f'val bin:\n {val.bin.value_counts()}')
         #y2['bin'] = pd.Series(y2.index).str[-1].values.astype(int)
@@ -240,19 +240,20 @@ class Cal_acc(Callback):
         #threshold_map = {0:0.785, 1:0.77, 2:0.77, 3:0.77, 4:0.78}
         top_cnt =2
         top_score = self._get_top_score(self.fold)[:top_cnt]
-        logger.info(f'The top#{top_cnt} score for oof:{oof_prefix}, fold#{self.fold} is:{top_score}')
+        logger.info(f'The top#{top_cnt} score for max_bin:{get_args().max_bin}, oof:{oof_prefix}, fold#{self.fold} is:{top_score}')
         threshold = top_score[-1]
         if ( total >=threshold and epoch>=1 and total > self.max_score) or (get_args().frac<=0.1):
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             self.gen_file=True
             test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}_f{self.fold}')
-            self.save_stack_feature(val, test, f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len(val)}_{get_args().max_bin}.h5')
+            len_raw_val = len(val.loc[val.bin == 0])
+            self.save_stack_feature(val, test, f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val)}_{get_args().max_bin}.h5')
         else:
             logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
 
         self.max_score = max(self.max_score, total)
 
-        logger.info(f'Epoch#{epoch}, oof:{oof_prefix}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
+        logger.info(f'Epoch#{epoch},max_bin:{get_args().max_bin}, oof:{oof_prefix}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
 
         print('\n')
 

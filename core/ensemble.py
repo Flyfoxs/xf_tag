@@ -36,9 +36,12 @@ def get_feature_oof(top):
     train['app_id'] = pd.Series(train.index).apply(lambda val: val.split('_')[0]).values
 
     test = pd.concat(test_list)
-    test = test.groupby(test.index).mean().sort_index()
-    test['app_id_ex'] = test.index
-    test['app_id'] = test.index
+
+    test['bin'] = pd.Series(test.index).apply(lambda val: val[-1]).values
+    test['app_id_ex'] = pd.Series(test.index).str[:32]
+    test['app_id'] = pd.Series(test.index).str[:32]
+
+    test = test.loc[test.bin==0].groupby('app_id').mean().sort_index()
 
     oof = pd.concat([train, test])
 
@@ -55,12 +58,17 @@ def gen_sub_mean(top):
     df_list = []
     for file in file_list:
         tmp = pd.read_hdf(file, 'test')
+        tmp['bin'] = pd.Series(tmp.index).str[-1].astype(int).values
+        tmp['id'] = pd.Series(tmp.index).str[:32].values
+        tmp = tmp.loc[tmp.bin == 0]
         df_list.append(tmp)
         print(tmp.shape)
     res = pd.concat(df_list)
     total = res.copy()
-    res['id'] = res.index
+
     res = res.groupby('id').mean().sort_index()
+
+    logger.info(f'The shape of ensemble sub is:{res.shape}')
 
     res['label1'] = res.iloc[:, :num_classes].idxmax(axis=1)
 

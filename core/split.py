@@ -35,7 +35,7 @@ def split_df_by_index(index, fold):
 
     train_bin = list(range(get_args().max_bin))
 
-    val_bin= [0,1,2]
+    val_bin= [0,1]
 
     logger.info(f'The original bin_id distribution in val data set:\n{ df.loc[(df.app_id.isin(val_gp))].bin.value_counts() } ')
 
