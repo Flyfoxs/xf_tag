@@ -23,6 +23,7 @@ def get_train_test_bert():
 
     frac = get_args().frac
     max_bin = get_args().max_bin
+    min_len = get_args().min_len
 
     data = get_feature_bert()
 
@@ -31,7 +32,7 @@ def get_train_test_bert():
 
     timed_bolck('Remove gan data, and len is less then 100')
 
-    data = data.loc[ (data.bin == 0) | (data['len_'] >= 100) ]
+    data = data.loc[ (data.bin == 0) | (data['len_'] >= min_len) ]
 
     logger.info(f'Train max_bin:{max_bin},Total Bin distribution:\n{data.bin.value_counts().sort_index()}')
 
@@ -166,7 +167,10 @@ class Cal_acc(Callback):
     def __init__(self, val_x, y , fold):
         super(Cal_acc, self).__init__()
         self.val_x , self.y = val_x, y
+        self.min_len = get_args().min_len
+        self.max_bin = get_args().max_bin
         self.fold = fold
+        self.threshold = 0
         self.feature_len = self.val_x.shape[1]
 
         self.max_score = 0
@@ -194,7 +198,7 @@ class Cal_acc(Callback):
         val = pd.DataFrame(val, columns=label2id.keys(), index=self.val_x.index)
         val['label'] = self.y.astype(int).replace(id2label).astype(int)
         val['bin'] = pd.Series(val.index).str[-1].values.astype(int)
-        logger.info(f'Head val#label:\n{val.label.head()}')
+        #logger.info(f'Head val#label:\n{val.label.head()}')
         res_val = val.copy()
         # res_val.to_pickle(f'./output/tmp_res_val.pkl')
         # logger.info(f'Debug file: save to ./output/tmp_res_val.pkl')
@@ -220,7 +224,8 @@ class Cal_acc(Callback):
 
 
     def on_train_end(self, logs=None):
-        logger.info(f'Train max:{max(self.score_list):7.6f}, at {np.argmax(self.score_list)}/{len(self.score_list)-1}, Train his:{self.score_list}, max_bin:{get_args().max_bin} gen_file:{self.gen_file}')
+        logger.info(f'Fold:{self.fold}, max:{max(self.score_list):7.6f}/{self.threshold}, at {np.argmax(self.score_list)}/{len(self.score_list)-1}, Train his:{self.score_list}, max_bin:{self.max_bin}, min_len:{self.min_len}, gen_file:{self.gen_file}')
+        logger.info(f'Input args:{get_args()}')
 
     def on_epoch_end(self, epoch, logs=None):
         print('\n')
@@ -241,15 +246,16 @@ class Cal_acc(Callback):
         top_cnt =2
         top_score = self._get_top_score(self.fold)[:top_cnt]
         logger.info(f'The top#{top_cnt} score for max_bin:{get_args().max_bin}, oof:{oof_prefix}, fold#{self.fold} is:{top_score}')
-        threshold = top_score[-1]
-        if ( total >=threshold and epoch>=1 and total > self.max_score) or (get_args().frac<=0.1):
+        self.threshold = top_score[-1]
+        if ( total > self.threshold and epoch>=1 and total > self.max_score) or (get_args().frac<=0.1):
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             self.gen_file=True
             test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}_f{self.fold}')
             len_raw_val = len(val.loc[val.bin == 0])
-            self.save_stack_feature(val, test, f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val)}_b{get_args().max_bin}_e{epoch}.h5')
+            oof_file = f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val):05}_b{get_args().max_bin}_e{epoch}_m{self.min_len}.h5'
+            self.save_stack_feature(val, test, oof_file)
         else:
-            logger.info(f'Only gen sub file if the local score >={threshold}, current score:{total}')
+            logger.info(f'Only gen sub file if the local score >={self.threshold}, current score:{total}')
 
         self.max_score = max(self.max_score, total)
 
