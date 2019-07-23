@@ -48,21 +48,26 @@ def get_feature_oof(top):
     return oof
 
 
-def gen_sub_mean(top):
+def gen_sub_mean(top, weight=1):
     file_list = []
     for fold in range(5):
         tmp = get_top_file(fold)
         # print(tmp)
         file_list = file_list + tmp[:top]
-    print(file_list)
+    #print(file_list)
     df_list = []
     for file in file_list:
         tmp = pd.read_hdf(file, 'test')
         tmp['bin'] = pd.Series(tmp.index).str[-1].astype(int).values
         tmp['id'] = pd.Series(tmp.index).str[:32].values
-        tmp = tmp.loc[tmp.bin == 0]
+
+        col_list = tmp.columns[:num_classes]
+        tmp.loc[tmp.bin == 0, col_list] = tmp.loc[tmp.bin == 0, col_list] * weight
+        tmp.loc[tmp.bin == 1, col_list] = tmp.loc[tmp.bin == 1, col_list] * (1 - weight)
+        logger.info(f'{file}:{tmp.shape}\n{tmp.bin.value_counts()}')
+        tmp = tmp.loc[tmp.bin.isin([0,1])].groupby('id').mean() #
         df_list.append(tmp)
-        print(tmp.shape)
+
     res = pd.concat(df_list)
     total = res.copy()
 
@@ -83,7 +88,7 @@ def gen_sub_mean(top):
         res[col] = res[col].replace(id2label)
 
     # info = info.replace('.','')
-    sub_file = f'./output/sub/mean_{len(file_list)}.csv'
+    sub_file = f'./output/sub/mean_{len(file_list)}_{int(weight*100):03}.csv'
     res[['label1', 'label2']].to_csv(sub_file)
     logger.info(f'Sub file save to :{sub_file}')
 

@@ -224,7 +224,8 @@ class Cal_acc(Callback):
 
 
     def on_train_end(self, logs=None):
-        logger.info(f'Fold:{self.fold}, max:{max(self.score_list):7.6f}/{self.threshold}, at {np.argmax(self.score_list)}/{len(self.score_list)-1}, Train his:{self.score_list}, max_bin:{self.max_bin}, min_len:{self.min_len}, gen_file:{self.gen_file}')
+        grow= max(self.score_list) - self.threshold
+        logger.info(f'Fold:{self.fold}, max:{max(self.score_list):7.6f}/{grow:+6.5f}, at {np.argmax(self.score_list)}/{len(self.score_list)-1}, Train his:{self.score_list}, max_bin:{self.max_bin}, min_len:{self.min_len}, gen_file:{self.gen_file}')
         logger.info(f'Input args:{get_args()}')
 
     def on_epoch_end(self, epoch, logs=None):
@@ -247,7 +248,7 @@ class Cal_acc(Callback):
         top_score = self._get_top_score(self.fold)[:top_cnt]
         logger.info(f'The top#{top_cnt} score for max_bin:{get_args().max_bin}, oof:{oof_prefix}, fold#{self.fold} is:{top_score}')
         self.threshold = top_score[-1]
-        if ( total > self.threshold and epoch>=1 and total > self.max_score) or (get_args().frac<=0.1):
+        if ( round(total,4) > round(self.threshold,4) and epoch>=1 and total > self.max_score) or (get_args().frac<=0.1):
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             self.gen_file=True
             test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}_f{self.fold}')
