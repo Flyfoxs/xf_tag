@@ -61,14 +61,18 @@ def gen_sub_mean(top, weight=1):
         file_list = file_list + tmp[:top]
     #print(file_list)
     df_list = []
-    for file in file_list:
+    for file in tqdm(file_list):
+
+        cur_weight = weight if weight >=0 else get_best_weight(file)
+
         tmp = pd.read_hdf(file, 'test')
         tmp['bin'] = pd.Series(tmp.index).str[-1].astype(int).values
         tmp['id'] = pd.Series(tmp.index).str[:32].values
 
         col_list = tmp.columns[:num_classes]
-        tmp.loc[tmp.bin == 0, col_list] = tmp.loc[tmp.bin == 0, col_list] * weight
-        tmp.loc[tmp.bin == 1, col_list] = tmp.loc[tmp.bin == 1, col_list] * (1 - weight)
+        #logger.info(f'Adjust the sub with weight:{cur_weight:3.2f} for file:{file}')
+        tmp.loc[tmp.bin == 0, col_list] = tmp.loc[tmp.bin == 0, col_list] * cur_weight
+        tmp.loc[tmp.bin == 1, col_list] = tmp.loc[tmp.bin == 1, col_list] * (1 - cur_weight)
         logger.info(f'{file}:{tmp.shape}\n{tmp.bin.value_counts()}')
         tmp = tmp.loc[tmp.bin.isin([0,1])].groupby('id').mean() #
         df_list.append(tmp)
@@ -78,7 +82,7 @@ def gen_sub_mean(top, weight=1):
 
     res = res.groupby('id').mean().sort_index()
 
-    logger.info(f'The shape of ensemble sub is:{res.shape}')
+    #logger.info(f'The shape of ensemble sub is:{res.shape}')
 
     res['label1'] = res.iloc[:, :num_classes].idxmax(axis=1)
 
@@ -100,7 +104,59 @@ def gen_sub_mean(top, weight=1):
     return total
 
 
+
+@timed()
+def get_best_weight(file):
+    df = pd.read_hdf(file, 'train')
+    df['bin'] = df.index.str[-1].astype(int)
+
+    col_list = df.columns[:num_classes]
+    #print(col_list)
+    df['bin'] = df.index.str[-1].astype(int)
+    df['app_id'] = df.index.str[:32]
+
+    if len(df.loc[df.bin==1]) ==0 :
+        return 1
+
+    print(df.bin.value_counts())
+    df = df.sort_values(['app_id', 'bin', 'label'])
+    df = df.drop_duplicates(['app_id', 'bin'])
+
+    score ={}
+
+    for weight in np.arange(0.7, 1.01, 0.05):
+        weight = round(weight, 2)
+        tmp = df.copy()
+        tmp.loc[tmp.bin == 0, col_list] = tmp.loc[tmp.bin == 0, col_list] * weight
+        tmp.loc[tmp.bin == 1, col_list] = tmp.loc[tmp.bin == 1, col_list] * (1 - weight)
+
+        # tmp = tmp.loc[tmp.bin==0]
+        tmp = tmp.loc[tmp.bin.isin([0, 1])]
+        #print(tmp.bin.value_counts())
+        tmp = tmp.groupby('app_id').mean()
+
+        print(tmp.shape)
+        tmp.label = tmp.label.astype(int)
+        # print(tmp.shape)
+        acc1, acc2, total = accuracy(tmp)
+        score[weight] = total
+
+    logger.info(f'Score list for file:{file}\n{score}')
+
+    base_score = list(score.values())[-1]
+
+    score = sorted(score.items(), key=lambda kv: kv[1])
+    best_score = score[-1][-1]
+    best_weight = score[-1][0]
+    grow = best_score-base_score
+
+    logger.info(f'====best_weight:{best_weight:3.2}, best_score:{best_score:6.5f}/{grow:6.5f}')
+    return best_weight
+
+
+
 if __name__== '__main__':
     from core.ensemble import *
-    sub = gen_sub_mean(2)
-    sub.shape
+
+    sub = gen_sub_mean(2, weight=-1)
+    sub = gen_sub_mean(2, weight=1)

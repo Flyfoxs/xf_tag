@@ -328,7 +328,7 @@ def accuracy(res):
     _, id2label = get_label_id()
 
     y = y.replace(id2label)
-    logger.info(f'Y=\n{y.head()}')
+    #logger.info(f'Y=\n{y.head()}')
 
     res['label1'] = res.iloc[:, :num_classes].idxmax(axis=1)#.values
 
@@ -515,10 +515,11 @@ def get_args():
     parser = argparse.ArgumentParser()
     # parser.set_defaults(func=test_abc)
 
+    from random import randrange
     parser.add_argument("--fold", type=int, default=0, help="Split fold")
     parser.add_argument("--max_bin", type=int, default=0, help="How many bin need to train")
     parser.add_argument("--min_len", type=int, default=50, help="The generated seq less than min_len will be drop")
-    parser.add_argument("--epochs", type=int, default=3, help="How many epoch is need")
+    parser.add_argument("--epochs", type=int, default=randrange(2, 4), help="How many epoch is need, default is 2 or 3")
     parser.add_argument("--frac", type=float, default=1.0, help="How many sample will pick")
 
     subparsers = parser.add_subparsers()
