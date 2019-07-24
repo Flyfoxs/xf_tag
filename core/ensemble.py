@@ -3,7 +3,7 @@ import pandas as pd
 from core.conf import *
 from core.feature import *
 
-
+@lru_cache()
 def get_top_file(fold):
     from glob import glob
     file_list = sorted(glob(f'./output/stacking/{oof_prefix}_{fold}_*.h5'), reverse=True)

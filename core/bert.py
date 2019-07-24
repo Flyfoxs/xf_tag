@@ -209,8 +209,12 @@ class Cal_acc(Callback):
             tmp_val = val.loc[val.bin.isin(bin_list)].copy()
             if len(tmp_val)>0:
 
-                tmp_val['app_id'] = pd.Series(tmp_val.index).apply(lambda val: val.split('_')[0]).values
                 df_len = len(tmp_val)
+
+                tmp_val['bin'] = pd.Series(tmp_val.index).str[-1].astype(int)
+                tmp_val['app_id'] = tmp_val.index.str[:32].values
+                tmp_val = tmp_val.sort_values(['app_id', 'bin', 'label'])
+                #One sample can have 2 label in the original data
                 tmp_val = tmp_val.drop_duplicates(['app_id', 'bin'])
 
                 tmp_val_mean = tmp_val.groupby('app_id').mean()

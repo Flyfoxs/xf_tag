@@ -320,10 +320,8 @@ def accuracy(res):
         return 0, 0, 0
 
     res = res.copy()
-    res['bin'] = pd.Series(res.index).str[-1].astype(int)
-    res['app_id'] = res.index.str[:32]
-    res = res.sort_values(['app_id', 'bin', 'label'])
-    res = res.drop_duplicates(['app_id', 'bin'])
+    #
+
 
     y = res.loc[:,'label'].copy().astype(int)#.astype(str)
 
