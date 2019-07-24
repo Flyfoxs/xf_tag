@@ -528,6 +528,10 @@ def get_args():
     from core.bert import train_base
     bert_parser.set_defaults(func=train_base)
 
+    manual = subparsers.add_parser('manual')
+    from core.bert_manual import manual_train
+    manual.set_defaults(func=manual_train)
+
     lgb_parser = subparsers.add_parser('train_ex')
     from core.lgb import train_ex
     lgb_parser.set_defaults(func=train_ex)
