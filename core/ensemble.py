@@ -28,9 +28,14 @@ def get_feature_oof(top):
         test_list.append(tmp)
 
     train = pd.concat(train_list)
+    train['app_id'] = train.index.str[:32].values
+    train = train.sort_values(['app_id','bin', 'label'])
+    old_len = len(train)
+    train = train.drop_duplicates(['app_id','bin'])
+    logger.warning(f'There are {old_len - len(train)} records are removed from oof, since one sample have 2 labels')
     train = train.groupby(train.index).mean().sort_index()
-    label2id, id2label = get_label_id()
-    train.columns = [id2label[col] if col in id2label else col  for col in train.columns ]
+    #label2id, id2label = get_label_id()
+    #train.columns = [id2label[col] if col in id2label else col  for col in train.columns ]
     train['bin'] = pd.Series(train.index).apply(lambda val: val[-1]).values
     train['app_id_ex'] = pd.Series(train.index).apply(lambda val: '_'.join(val.split('_')[:-1])).values
     train['app_id'] = pd.Series(train.index).apply(lambda val: val.split('_')[0]).values
