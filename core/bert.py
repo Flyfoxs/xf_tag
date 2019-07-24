@@ -251,7 +251,7 @@ class Cal_acc(Callback):
         top_cnt =2
         top_score = self._get_top_score(self.fold)[:top_cnt]
         logger.info(f'The top#{top_cnt} score for max_bin:{get_args().max_bin}, oof:{oof_prefix}, fold#{self.fold} is:{top_score}')
-        self.threshold = top_score[-1]
+        self.threshold = top_score[-1] if len(top_score) == top_cnt else 0
         if ( round(total,4) > round(self.threshold,4) and epoch>=1 and total > self.max_score) or (get_args().frac<=0.1):
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             self.gen_file=True
