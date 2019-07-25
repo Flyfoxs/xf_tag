@@ -319,9 +319,8 @@ def accuracy(res):
     if res is None or len(res)==0:
         return 0, 0, 0
 
-    res = res.copy()
-    #
-
+    res = res.loc[res.label.astype(float) > 0].copy()
+    logger.info(f'Accuracy base on res:{res.shape}')
 
     y = res.loc[:,'label'].copy().astype(int)#.astype(str)
 
@@ -518,7 +517,7 @@ def get_args():
     from random import randrange
     parser.add_argument("--fold", type=int, default=0, help="Split fold")
     parser.add_argument("--max_bin", type=int, default=0, help="How many bin need to train")
-    parser.add_argument("--min_len", type=int, default=50, help="The generated seq less than min_len will be drop")
+    parser.add_argument("--min_len", type=int, default=100, help="The generated seq less than min_len will be drop")
     parser.add_argument("--epochs", type=int, default=randrange(2, 4), help="How many epoch is need, default is 2 or 3")
     parser.add_argument("--frac", type=float, default=1.0, help="How many sample will pick")
 

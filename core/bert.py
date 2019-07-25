@@ -353,10 +353,10 @@ class Cal_acc(Callback):
             for col in ['label1','label2']:
                 res[col] = res[col].replace(id2label)
 
-            info = info.replace('.','')
-            sub_file = f'./output/sub/v19_{info}_{name}.csv'
-            res[['label1', 'label2']].to_csv(sub_file)
-            logger.info(f'Sub file save to :{sub_file}')
+            # info = info.replace('.','')
+            # sub_file = f'./output/sub/v19_{info}_{name}.csv'
+            # res[['label1', 'label2']].to_csv(sub_file)
+            # logger.info(f'Sub file save to :{sub_file}')
 
         logger.info(f'res_0 Check:\n{res_0.iloc[:3, :num_classes].sum(axis=1)}')
 

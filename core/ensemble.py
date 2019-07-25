@@ -4,16 +4,16 @@ from core.conf import *
 from core.feature import *
 
 static_list = [
-'./output/stacking/v6_0_0.804024_6006_10605_b1_e1_m50.h5',
-'./output/stacking/v6_0_0.804532_6006_10605_b2_e1_m50.h5',
-'./output/stacking/v6_1_0.789411_5918_10451_b2_e1_m50.h5',
-'./output/stacking/v6_1_0.792143_5918_10451_b1_e1_m50.h5',
-'./output/stacking/v6_2_0.790876_6237_11068_b1_e1_m50.h5',
-'./output/stacking/v6_2_0.791542_6237_11068_b1_e1_m50.h5',
-'./output/stacking/v6_3_0.799421_5996_10562_b1_e1_m50.h5',
-'./output/stacking/v6_3_0.801635_5996_10562_b1_e1_m50.h5',
-'./output/stacking/v6_4_0.765271_6977_12388_b4_e1_m20.h5',
-'./output/stacking/v6_4_0.766215_6977_06977_b0_e1_m20.h5',
+# './output/stacking/v6_0_0.804024_6006_10605_b1_e1_m50.h5',
+# './output/stacking/v6_0_0.804532_6006_10605_b2_e1_m50.h5',
+# './output/stacking/v6_1_0.789411_5918_10451_b2_e1_m50.h5',
+# './output/stacking/v6_1_0.792143_5918_10451_b1_e1_m50.h5',
+# './output/stacking/v6_2_0.790876_6237_11068_b1_e1_m50.h5',
+# './output/stacking/v6_2_0.791542_6237_11068_b1_e1_m50.h5',
+# './output/stacking/v6_3_0.799421_5996_10562_b1_e1_m50.h5',
+# './output/stacking/v6_3_0.801635_5996_10562_b1_e1_m50.h5',
+# './output/stacking/v6_4_0.765271_6977_12388_b4_e1_m20.h5',
+# './output/stacking/v6_4_0.766215_6977_06977_b0_e1_m20.h5',
 ]
 @lru_cache()
 def get_top_file(fold):
@@ -26,7 +26,7 @@ def get_top_file(fold):
 
 @lru_cache()
 @timed()
-def get_feature_oof(top, weight=1):
+def get_feature_oof(top=2, weight=1):
     file_list = []
     for fold in range(5):
         tmp = get_top_file(fold)
@@ -72,13 +72,13 @@ def get_feature_oof(top, weight=1):
     oof = pd.concat([train, test])
 
     oof = oof.groupby(oof.index).mean()
-
+    del oof['bin']
     oof.label = oof.label.fillna(0).astype(int).astype(str)
     return oof
 
 
-def gen_sub_mean(top, weight=1):
-    res = get_feature_oof(top, weight)
+def gen_sub_file(res, file_name):
+
 
     res = res.loc[res.label == '0'].copy()
     res.loc[:, 'label1'] = res.iloc[:, :num_classes].idxmax(axis=1)
@@ -90,7 +90,7 @@ def gen_sub_mean(top, weight=1):
     res.loc[:, 'label2'] = res.iloc[:, :num_classes].idxmax(axis=1)
     res.index.name = 'id'
 
-    sub_file = f'./output/sub/mean_top{top}_{int(weight*100):03}.csv'
+    sub_file = f'./output/sub/{file_name}'
     res[['label1', 'label2']].to_csv(sub_file)
     logger.info(f'Sub file save to :{sub_file}')
 
@@ -148,8 +148,20 @@ def get_best_weight(file):
 
 if __name__== '__main__':
     from core.ensemble import *
-
+    top = 2
+    weight=-1
     #sub = gen_sub_mean(2, weight=-1)
-    res = gen_sub_mean(2, weight=1)
+    res = get_feature_oof(top, weight)
+    file_name = f'mean_top{top}_{int(weight * 100):03}.csv'
+    res = gen_sub_file(res, file_name)
+
+
+
+
+
+"""
+nohup python -u ./core/ensemble.py > ensemble.log 2>&1 &
+"""
+
 
 
