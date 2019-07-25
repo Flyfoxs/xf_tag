@@ -264,7 +264,7 @@ class Cal_acc(Callback):
 
         self.max_score = max(self.max_score, total)
 
-        logger.info(f'Epoch#{epoch},max_bin:{get_args().max_bin}, oof:{oof_prefix}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
+        logger.info(f'Epoch#{epoch},max_bin:{get_args().max_bin}, oof:{oof_prefix}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>, Fold:{self.fold},')
 
         print('\n')
 
@@ -274,6 +274,8 @@ class Cal_acc(Callback):
     @staticmethod
     @timed()
     def save_stack_feature(train: pd.DataFrame, test: pd.DataFrame, file_path):
+        train.bin = train.bin.astype(int)
+        test.bin = test.bin.astype(int)
         train.to_hdf(file_path, 'train', mode='a')
         test.to_hdf(file_path, 'test', mode='a')
         logger.info(f'OOF file save to :{file_path}')
@@ -302,13 +304,14 @@ class Cal_acc(Callback):
             res_list.append(res)
 
         res = pd.concat(res_list)
+        res['bin'] = res.index.str[-1].values.astype(int)
         raw_predict = res.copy()
         #print('\nafter concat\n', res.iloc[:3, :3].head())
         res['id'] = res.index
         res.index.name = 'id'
         res.to_pickle(f'./output/tmp_sub.pkl')
 
-        res['bin'] = res.id.apply(lambda val: int(val.split('_')[1]))
+
         #print('\nend res\n', res.iloc[:3, :3].head())
 
 

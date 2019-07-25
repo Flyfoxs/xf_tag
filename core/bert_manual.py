@@ -91,7 +91,7 @@ def manual_train(args):
         from keras_bert import load_trained_model_from_checkpoint
 
         model = load_trained_model_from_checkpoint(config_path, checkpoint_path, training=True, seq_len=SEQ_LEN, )
-        #model.summary(line_length=120)
+
 
         from tensorflow.python import keras
         from keras_bert import AdamWarmup, calc_train_steps
@@ -110,11 +110,18 @@ def manual_train(args):
         data = get_feature_manual(n_topic)
         manual_fea_len = len([col for col in data.columns if col.startswith('fea_')])
 
-        manual_input = keras.Input(shape=(manual_fea_len,), name='manual_fea', dtype='float32')
-        inputs = inputs + [manual_input]
-        dense_manual = keras.layers.Dense(num_classes * 2, activation='relu')(manual_input)
-        fc_ex = keras.layers.concatenate([dense_bert, dense_manual], axis=1)
+        manual_feature = keras.Input(shape=(manual_fea_len,), name='manual_feature', dtype='float32')
+        inputs = inputs + [manual_feature]
+
+
+        manual_feature = keras.layers.Dense(round(num_classes*0.6),  name='manual_dense', activation='relu')(manual_feature)
+        manual_feature = keras.layers.Dropout(0.5)(manual_feature)
+        #manual_feature = keras.layers.Dense(round(num_classes), activation='relu')(manual_feature)
+
+        fc_ex = keras.layers.concatenate([dense_bert, manual_feature], axis=1)
         # End input from manual
+
+        #fc_ex = keras.layers.Dense(units=1024, activation='softmax')(fc_ex)
 
         outputs = keras.layers.Dense(units=152, activation='softmax')(fc_ex)
 
@@ -124,6 +131,8 @@ def manual_train(args):
             loss='categorical_crossentropy',
             metrics=['accuracy'],
         )
+
+        model.summary(line_length=120)
         ##End to define model
 
         input1_col = [col for col in X.columns if str(col).startswith('bert_')]
@@ -279,7 +288,7 @@ class Cal_acc(Callback):
 
         self.max_score = max(self.max_score, total)
 
-        logger.info(f'Epoch#{epoch},max_bin:{get_args().max_bin}, oof:{oof_prefix}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>')
+        logger.info(f'Epoch#{epoch},max_bin:{get_args().max_bin}, oof:{oof_prefix}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>, Fold:{self.fold}')
 
         print('\n')
 
