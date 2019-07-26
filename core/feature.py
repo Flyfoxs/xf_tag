@@ -59,12 +59,16 @@ def extend_train_set():
     # apptype_train.type_id = apptype_train.type_id.astype(str)
     return apptype_train
 
+def get_app_type():
+    apptype = pd.read_csv(f'{input_dir}/apptype_id_name.txt', delimiter='\t', quoting=3, names=['type_id', 'type_name'],
+                          dtype=type_dict)
+    return apptype
+
 @timed()
 def get_raw_data():
     apptype_train = extend_train_set()
 
-    apptype = pd.read_csv(f'{input_dir}/apptype_id_name.txt', delimiter='\t', quoting=3, names=['type_id', 'type_name'],
-                          dtype=type_dict)
+    apptype = get_app_type()
 
     apptype_test = pd.read_csv(f'{input_dir}/app_desc.dat', delimiter='\t', quoting=3, header=None, names=['app_id', 'app_des'], )
     #apptype_test.index = apptype_test.app_id
@@ -78,27 +82,33 @@ def get_raw_data():
     return data.sort_values(['type_cnt'])
 
 
-@timed()
-def get_app_des_2_ids(data):
+def get_tokenizer():
     import codecs
     token_dict = {}
     with codecs.open(vocab_path, 'r', 'utf8') as reader:
         for line in reader:
             token = line.strip()
             token_dict[token] = len(token_dict)
-
-
-
     from keras_bert import Tokenizer
     tokenizer = Tokenizer(token_dict)
+    return tokenizer
+
+
+
+def get_ids_from_text(text):
     def convert_tokens_to_ids(tokens):
+        tokenizer = get_tokenizer()
         tokens = tokenizer._tokenize(tokens)
         token_ids = tokenizer._convert_tokens_to_ids(tokens)
         return token_ids
+    ids = convert_tokens_to_ids(text)
+    return [len(ids), ','.join([str(id) for id in ids])]
 
-    def get_ids_from_text(text):
-        ids = convert_tokens_to_ids(text)
-        return [len(ids), ','.join([str(id) for id in ids])]
+
+@timed()
+def get_app_des_2_ids(data):
+
+
 
     with timed_bolck('str to bert format'):
         # On app_id have multiply type_id
@@ -121,17 +131,18 @@ def split_app_des(df, split_len=SEQ_LEN):
 
     df_list = []
 
-    def split_ids(ids, seq_len, i):
+    def split_ids(ids, seq_len, window, i):
         ids = ids.split(',')
-        ids = ['101'] + ids[i * seq_len : (i + 1) * seq_len] + ['102']
+        ids = ['101'] + ids[i * window : i * window + seq_len] + ['102']
         return pd.Series({'ids':','.join(ids), 'ids_lens': len(ids)})
 
 
-    for i in tqdm(range(4), desc='split app des'):
-        tmp = df.loc[(df.ids_lens > i * seq_len)].copy()
+    window = get_args().window
+    for i in tqdm(range(4), desc=f'split app des, window:{window}, seq_len:{seq_len}'):
+        tmp = df.loc[(df.ids_lens > i * window)].copy()
         if len(tmp)==0:
             break
-        tmp[['ids', 'ids_lens']] = tmp.ids.apply(lambda val: split_ids(val, seq_len, i))
+        tmp[['ids', 'ids_lens']] = tmp.ids.apply(lambda val: split_ids(val, seq_len, window, i))
         tmp['bin'] = i
         tmp['app_id_ex_bin'] = tmp.app_id_ex + '_' + str(i)
 
@@ -329,19 +340,19 @@ def accuracy(res):
     y = y.replace(id2label)
     #logger.info(f'Y=\n{y.head()}')
 
-    res['label1'] = res.iloc[:, :num_classes].idxmax(axis=1)#.values
-
-    #Exclude top#1
-    for index, col in res.label1.items():
-        #logger.info(f'top#1 is {index}, {col}')
-        res.loc[index, col] = np.nan
-
-    res['label2'] = res.iloc[:, :num_classes].idxmax(axis=1)#.values
+    for i in tqdm(range(1,5,1), 'cal acc for label1(+)'):
+        res[f'label{i}'] = res.iloc[:, :num_classes].idxmax(axis=1)#.values
+        #Exclude top#1
+        for index, col in res[f'label{i}'].items():
+            #logger.info(f'top#1 is {index}, {col}')
+            res.loc[index, col] = np.nan
 
     acc1 = sum(res['label1'].values.astype(int) == y.values.astype(int)) / len(res)
     acc2 = sum(res['label2'].values.astype(int) == y.values.astype(int)) / len(res)
+    acc3 = sum(res['label3'].values.astype(int) == y.values.astype(int)) / len(res)
+    acc4 = sum(res['label4'].values.astype(int) == y.values.astype(int)) / len(res)
 
-    return acc1, acc2, acc1+acc2
+    return acc1, acc2, acc1+acc2, acc3, acc4
 
 
 
@@ -445,6 +456,86 @@ def get_feature_seq_input_sentences():
 
 @timed()
 @file_cache()
+def get_embed_from_desc():
+    os.environ['TF_KERAS'] = '1'
+    X = get_feature_bert()
+    input1_col = [col for col in X.columns if str(col).startswith('bert_')]
+    X = X.loc[:, input1_col]
+    logger.info(f'X shape:{X.shape}')
+    return get_embed_by_bert(X)
+
+
+@timed()
+@file_cache()
+def get_embed_from_type_name():
+    os.environ['TF_KERAS'] = '1'
+    app_type = get_app_type()
+
+    ids = app_type.type_name.apply(lambda text: '101,' + get_ids_from_text(text)[1] + ',102')
+
+    df = pd.DataFrame(np.zeros((152, 128))).add_prefix('bert_')
+
+    tmp = ids.str.split(',', expand=True).add_prefix('bert_').fillna(0).astype(int)
+
+    df.loc[:, tmp.columns] = tmp
+    df.index = app_type.type_id
+    df = df.astype(int)
+    logger.info(f'df shape:{df.shape}')
+    return get_embed_by_bert(df)
+
+
+
+@timed()
+def get_embed_by_bert(X):
+
+    with timed_bolck(f'Prepare train data'):
+
+        from keras_bert import load_trained_model_from_checkpoint
+
+        model = load_trained_model_from_checkpoint(config_path, checkpoint_path, training=True, seq_len=SEQ_LEN, )
+        #model.summary(line_length=120)
+
+        from tensorflow.python import keras
+        from keras_bert import AdamWarmup, calc_train_steps
+        inputs = model.inputs[:2]
+        dense = model.get_layer('NSP-Dense').output
+        model = keras.models.Model(inputs, dense)#.summary()
+
+        ##End to define model
+
+        input1_col = [col for col in X.columns if str(col).startswith('bert_')]
+        #model  # = get_model(max_words)
+
+
+    with timed_bolck(f'bry to gen embed'):
+
+        # train_x, train_y = filter_short_desc(train_x, train_y)
+
+        input1 = X.loc[:, input1_col]  # .astype(np.float32)
+        input2 = np.zeros_like(input1)  # .astype(np.int8)
+
+        logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
+
+        label2id, id2label = get_label_id()
+        from keras_bert import get_custom_objects
+        import tensorflow as tf
+        with tf.keras.utils.custom_object_scope(get_custom_objects()):
+            res_list = []
+            partition_len = 5000
+            for sn in tqdm(range(1 + len(X) // partition_len), 'gen embeding'):
+                tmp = X.iloc[sn * partition_len: (sn + 1) * partition_len]
+                # print('\nbegin tmp\n', tmp.iloc[:3,:3].head())
+                res = model.predict([tmp.loc[:, input1_col], np.zeros_like(tmp.loc[:, input1_col])])
+                res = pd.DataFrame(res, index=tmp.index).add_prefix('embd_bert')
+                # print('\nend tmp\n', res.iloc[:3, :3].head())
+                res_list.append(res)
+
+            res = pd.concat(res_list)
+
+    return res
+
+@timed()
+@file_cache()
 def get_feature_bert():
 
     raw = get_raw_data()
@@ -520,29 +611,28 @@ def get_args():
     parser.add_argument("--min_len", type=int, default=100, help="The generated seq less than min_len will be drop")
     parser.add_argument("--epochs", type=int, default=randrange(2, 4), help="How many epoch is need, default is 2 or 3")
     parser.add_argument("--frac", type=float, default=1.0, help="How many sample will pick")
+    parser.add_argument("--window", type=int, default=SEQ_LEN-2, help="Rolling to gen sample for training")
 
-    subparsers = parser.add_subparsers()
 
-    bert_parser = subparsers.add_parser('train_base')
-    from core.bert import train_base
-    bert_parser.set_defaults(func=train_base)
 
-    manual = subparsers.add_parser('manual')
-    from core.bert_manual import manual_train
-    manual.set_defaults(func=manual_train)
-
-    lgb_parser = subparsers.add_parser('train_ex')
-    from core.lgb import train_ex
-    lgb_parser.set_defaults(func=train_ex)
+    parser.add_argument('command', type=str, default='cmd')
 
     args = parser.parse_args()
     return args
 
 if __name__ == '__main__':
-    import fire
-    fire.Fire()
+    FUNCTION_MAP = {'get_embed_from_desc': get_embed_from_desc,
+                    'get_embed_from_type_name':get_embed_from_type_name
+                     }
+
+    args = get_args()
+
+    func = FUNCTION_MAP[args.command]
+    func()
 
 """
-nohup python core/feature.py batch_manual > feature.log 2>&1 &
+nohup python core/feature.py get_embed_from_desc > feature.log 2>&1 &
+
+nohup python core/feature.py get_embed_from_type_name > feature.log 2>&1 &
 
 """
