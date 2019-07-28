@@ -81,7 +81,7 @@ def get_raw_data():
 
     return data.sort_values(['type_cnt'])
 
-
+@lru_cache()
 def get_tokenizer():
     import codecs
     token_dict = {}
@@ -107,12 +107,9 @@ def get_ids_from_text(text):
 
 @timed()
 def get_app_des_2_ids(data):
-
-
-
-    with timed_bolck('str to bert format'):
+    data = data.drop_duplicates(['app_id_ex'])
+    with timed_bolck(f'str to bert format for DF:{data.shape}'):
         # On app_id have multiply type_id
-        data = data.drop_duplicates(['app_id'])
         ids = np.array(list([get_ids_from_text(text) for text in data.app_des.values.tolist()]))
 
     data['ids_lens'] = ids[:, 0].astype(int)
@@ -453,97 +450,134 @@ def get_feature_seq_input_sentences():
 
     return pd.DataFrame(X, index=data.app_id).add_prefix('seq_')
 
-
-@timed()
-@file_cache()
-def get_embed_from_desc():
-    os.environ['TF_KERAS'] = '1'
-    X = get_feature_bert()
-    input1_col = [col for col in X.columns if str(col).startswith('bert_')]
-    X = X.loc[:, input1_col]
-    logger.info(f'X shape:{X.shape}')
-    return get_embed_by_bert(X)
+class Bert_Embed():
 
 
-@timed()
-@file_cache()
-def get_embed_from_type_name():
-    os.environ['TF_KERAS'] = '1'
-    app_type = get_app_type()
+    @staticmethod
+    def get_embed_wordvec_file():
+        fname = bert_wv
+        if os.path.exists(fname):
+            return fname
+        else:
+            type_id = Bert_Embed._get_embed_from_type_name()
 
-    ids = app_type.type_name.apply(lambda text: '101,' + get_ids_from_text(text)[1] + ',102')
+            app_type = get_app_type()
+            app_type = app_type.drop_duplicates('type_name')
+            app_type = app_type.set_index('type_id')
 
-    df = pd.DataFrame(np.zeros((152, 128))).add_prefix('bert_')
+            type_name =type_id.copy()
+            type_name = pd.merge(type_name, app_type, how='right', left_index=True, right_index=True)
+            type_name = type_name.set_index('type_name')
 
-    tmp = ids.str.split(',', expand=True).add_prefix('bert_').fillna(0).astype(int)
+            type_all = pd.concat([type_id, type_name])
+            #del type_all['type_id']
 
-    df.loc[:, tmp.columns] = tmp
-    df.index = app_type.type_id
-    df = df.astype(int)
-    logger.info(f'df shape:{df.shape}')
-    return get_embed_by_bert(df)
+            app_desc = Bert_Embed._get_embed_from_app_desc()
+
+            data = pd.concat([type_all, app_desc])
 
 
 
-@timed()
-def get_embed_by_bert(X):
+            with timed_bolck(f'Save data#{data.shape} records to :{fname}'):
+                np.savetxt(fname, data.reset_index().values,
+                           delimiter=" ",
+                           header="{} {}".format(len(data), len(data.columns)),
+                           comments="",
+                           fmt=["%s"] + ["%.6f"] * len(data.columns))
 
-    with timed_bolck(f'Prepare train data'):
+            return fname
 
-        from keras_bert import load_trained_model_from_checkpoint
 
-        model = load_trained_model_from_checkpoint(config_path, checkpoint_path, training=True, seq_len=SEQ_LEN, )
-        #model.summary(line_length=120)
 
-        from tensorflow.python import keras
-        from keras_bert import AdamWarmup, calc_train_steps
-        inputs = model.inputs[:2]
-        dense = model.get_layer('NSP-Dense').output
-        model = keras.models.Model(inputs, dense)#.summary()
 
-        ##End to define model
-
+    @file_cache()
+    @staticmethod
+    def _get_embed_from_app_desc():
+        os.environ['TF_KERAS'] = '1'
+        X = get_feature_bert(SEQ_LEN)
         input1_col = [col for col in X.columns if str(col).startswith('bert_')]
-        #model  # = get_model(max_words)
+        X = X.loc[:, input1_col]
+        logger.info(f'X shape:{X.shape}')
+        return Bert_Embed._get_embed_by_bert(X)
 
 
-    with timed_bolck(f'bry to gen embed'):
 
-        # train_x, train_y = filter_short_desc(train_x, train_y)
+    @file_cache()
+    @staticmethod
+    def _get_embed_from_type_name():
+        os.environ['TF_KERAS'] = '1'
+        app_type = get_app_type()
 
-        input1 = X.loc[:, input1_col]  # .astype(np.float32)
-        input2 = np.zeros_like(input1)  # .astype(np.int8)
+        ids = app_type.type_name.apply(lambda text: '101,' + get_ids_from_text(text)[1] + ',102')
 
-        logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
+        df = pd.DataFrame(np.zeros((152, 128))).add_prefix('bert_')
 
-        label2id, id2label = get_label_id()
-        from keras_bert import get_custom_objects
-        import tensorflow as tf
-        with tf.keras.utils.custom_object_scope(get_custom_objects()):
-            res_list = []
-            partition_len = 5000
-            for sn in tqdm(range(1 + len(X) // partition_len), 'gen embeding'):
-                tmp = X.iloc[sn * partition_len: (sn + 1) * partition_len]
-                # print('\nbegin tmp\n', tmp.iloc[:3,:3].head())
-                res = model.predict([tmp.loc[:, input1_col], np.zeros_like(tmp.loc[:, input1_col])])
-                res = pd.DataFrame(res, index=tmp.index).add_prefix('embd_bert')
-                # print('\nend tmp\n', res.iloc[:3, :3].head())
-                res_list.append(res)
+        tmp = ids.str.split(',', expand=True).add_prefix('bert_').fillna(0).astype(int)
 
-            res = pd.concat(res_list)
+        df.loc[:, tmp.columns] = tmp
+        df.index = app_type.type_id
+        df = df.astype(int)
+        logger.info(f'df shape:{df.shape}')
+        return Bert_Embed._get_embed_by_bert(df)
 
-    return res
+
+
+
+    @staticmethod
+    def _get_embed_by_bert(X):
+        with timed_bolck(f'Prepare train model'):
+
+            from keras_bert import load_trained_model_from_checkpoint
+
+            model = load_trained_model_from_checkpoint(config_path, checkpoint_path, training=True, seq_len=SEQ_LEN, )
+            #model.summary(line_length=120)
+
+            from tensorflow.python import keras
+            from keras_bert import AdamWarmup, calc_train_steps
+            inputs = model.inputs[:2]
+            dense = model.get_layer('NSP-Dense').output
+            model = keras.models.Model(inputs, dense)#.summary()
+
+
+
+        with timed_bolck(f'try to gen embed DF{len(X)}'):
+            input1_col = [col for col in X.columns if str(col).startswith('bert_')]
+            # train_x, train_y = filter_short_desc(train_x, train_y)
+
+            input1 = X.loc[:, input1_col]  # .astype(np.float32)
+            input2 = np.zeros_like(input1)  # .astype(np.int8)
+
+            logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
+
+            label2id, id2label = get_label_id()
+            from keras_bert import get_custom_objects
+            import tensorflow as tf
+            with tf.keras.utils.custom_object_scope(get_custom_objects()):
+                res_list = []
+                partition_len = 5000
+                for sn in tqdm(range(1 + len(X) // partition_len), 'gen embeding'):
+                    tmp = X.iloc[sn * partition_len: (sn + 1) * partition_len]
+                    # print('\nbegin tmp\n', tmp.iloc[:3,:3].head())
+                    res = model.predict([tmp.loc[:, input1_col], np.zeros_like(tmp.loc[:, input1_col])])
+                    res = pd.DataFrame(res, index=tmp.index).add_prefix('embd_bert')
+                    # print('\nend tmp\n', res.iloc[:3, :3].head())
+                    res_list.append(res)
+
+                res = pd.concat(res_list)
+
+        return res
 
 @timed()
 @file_cache()
-def get_feature_bert():
+def get_feature_bert(seq_len):
 
     raw = get_raw_data()
+    #print('====0', len(raw.loc[raw.app_id == 'BA915EC5E4CB0884C08C8DD9E9F1FD8F']))
     data = get_app_des_2_ids(raw)
-    data = split_app_des(data)
+    #print('====1', len(data.loc[data.app_id=='BA915EC5E4CB0884C08C8DD9E9F1FD8F']))
+    data = split_app_des(data, seq_len)
 
     bert = data.ids.str.split(',', expand=True).add_prefix('bert_').fillna(0).astype(int)
-
 
     with timed_bolck(f'Join bert#{bert.shape} and raw#{raw.shape} data'):
         old_shape = bert.shape
@@ -554,17 +588,34 @@ def get_feature_bert():
         bert['bin'] = data.bin.values
         bert['len_'] = data.len_.values
         if 'app_des' in raw: del raw['app_des']
-        del bert['app_id_ex']
+        del raw['app_id']
         del raw['len_']
-        bert = pd.merge(bert, raw, how='left', on=['app_id'])
+        bert = pd.merge(bert, raw, how='left', on=['app_id_ex'])
 
         bert.index = bert.app_id_ex_bin
         logger.info(f'Merge extend shape from {old_shape}, {raw.shape} to {bert.shape}')
 
-    padding_analysis = bert.loc[:, f'bert_127'].value_counts().sort_index()
-    logger.info(f'padding_analysis:\n{padding_analysis}')
+    padding_analysis = bert.loc[:, f'bert_{SEQ_LEN-1}'].value_counts().sort_index()
+    logger.info(f'padding_analysis(bert_{SEQ_LEN-1}):\n{padding_analysis}')
     return bert.sort_values(['app_id_ex_bin'], ascending=False)
 
+
+@timed()
+@file_cache()
+def get_feature_bert_wv():
+    with timed_bolck(f'Read wv by gensim'):
+        fname = Bert_Embed.get_embed_wordvec_file()
+        import gensim
+        word_vectors = gensim.models.KeyedVectors.load_word2vec_format(fname, binary=False)
+        raw_bert = get_feature_bert()
+        label2id, id2label = get_label_id()
+        df = pd.DataFrame(np.zeros((len(raw_bert), num_classes)), columns=label2id.keys(), index=raw_bert.index)
+
+
+    for col in tqdm(df.columns, desc=f'Cal distanc for DF:{df.shape}'):
+        df[col] = pd.Series(df.index).apply(lambda id_ex_bin: word_vectors.distance(id_ex_bin, col) ).values
+
+    return df
 
 #6 hours
 @timed()
@@ -608,7 +659,7 @@ def get_args():
     from random import randrange
     parser.add_argument("--fold", type=int, default=0, help="Split fold")
     parser.add_argument("--max_bin", type=int, default=0, help="How many bin need to train")
-    parser.add_argument("--min_len", type=int, default=100, help="The generated seq less than min_len will be drop")
+    parser.add_argument("--min_len_ratio", type=float, default=0.9, help="The generated seq less than min_len will be drop")
     parser.add_argument("--epochs", type=int, default=randrange(2, 4), help="How many epoch is need, default is 2 or 3")
     parser.add_argument("--frac", type=float, default=1.0, help="How many sample will pick")
     parser.add_argument("--window", type=int, default=SEQ_LEN-2, help="Rolling to gen sample for training")
@@ -621,8 +672,9 @@ def get_args():
     return args
 
 if __name__ == '__main__':
-    FUNCTION_MAP = {'get_embed_from_desc': get_embed_from_desc,
-                    'get_embed_from_type_name':get_embed_from_type_name
+    FUNCTION_MAP = {
+                    'get_feature_bert_wv':get_feature_bert_wv,
+                    'get_feature_bert':get_feature_bert,
                      }
 
     args = get_args()
@@ -631,8 +683,10 @@ if __name__ == '__main__':
     func()
 
 """
-nohup python core/feature.py get_embed_from_desc > feature.log 2>&1 &
+nohup python -u core/feature.py get_feature_bert > feature.log 2>&1 &
 
-nohup python core/feature.py get_embed_from_type_name > feature.log 2>&1 &
+nohup python -u core/feature.py get_feature_bert_wv > feature.log 2>&1 &
+
+ 
 
 """

@@ -23,9 +23,9 @@ def get_train_test_bert():
 
     frac = get_args().frac
     max_bin = get_args().max_bin
-    min_len = get_args().min_len
+    min_len = int(SEQ_LEN*get_args().min_len_ratio)
 
-    data = get_feature_bert()
+    data = get_feature_bert(SEQ_LEN)
 
     #Keep all the bin group, if it's test data
     data = data.loc[(data.bin<=max_bin) | (pd.isna(data.type_id))]
@@ -77,10 +77,23 @@ def boost_train(boost=10):
         p.join()
 
 
+@timed()
+def filter_short_desc(X, y):
+    X = X.copy().reset_index()
+    bert_cols = [col for col in X.columns if str(col).startswith('bert_')]
+    bert = X.loc[:, bert_cols]
+    bert_len = bert.where(bert > 0).count(axis=1)
+    old_len = len(bert_len)
+    min_len = int(SEQ_LEN*get_args().min_len_ratio)
+    bert_len = bert_len.loc[bert_len >= min_len]
+    logger.info(f'Filter {old_len - len(bert_len)} records from {old_len} by threshold {min_len}')
+
+    return X.iloc[bert_len.index], y[bert_len.index]
 
 
 @timed()
-def train_base(args):
+def train_base():
+    args = get_args()
     #frac = args.frac
     fold = args.fold
     EPOCHS = args.epochs
@@ -104,6 +117,8 @@ def train_base(args):
         from keras_bert import AdamWarmup, calc_train_steps
         inputs = model.inputs[:2]
         dense = model.get_layer('NSP-Dense').output
+        keras.models.Model(inputs, dense).summary()
+
         outputs = keras.layers.Dense(units=152, activation='softmax')(dense)
 
         decay_steps, warmup_steps = calc_train_steps(
@@ -131,14 +146,16 @@ def train_base(args):
 
     with timed_bolck(f'Training#{fold}'):
         from core.split import split_df_by_index
-        train_idx, test_idx = split_df_by_index(pd.Series(X.index),fold)
+        train_idx, test_idx = split_df_by_index(X,fold)
 
         logger.info(f'Shape train_x.loc[:, input1_col].iloc[:,0]: {X.loc[:, input1_col].iloc[:,0].shape}')
         train_x, train_y, val_x, val_y = \
             X.iloc[train_idx], Y_cat[train_idx], X.iloc[test_idx], Y_cat[test_idx]
 
         logger.info(f'get_train_test output: train_x:{train_x.shape}, train_y:{train_y.shape}, val_x:{val_x.shape} ')
-        #for sn in range(5):
+
+        #train_x, train_y = filter_short_desc(train_x, train_y)
+
         input1 = train_x.loc[:, input1_col]#.astype(np.float32)
         input2 = np.zeros_like(input1)#.astype(np.int8)
 
@@ -152,7 +169,7 @@ def train_base(args):
             his = model.fit([input1, input2], train_y,
                             validation_data = ([val_x.loc[:, input1_col], np.zeros_like(val_x.loc[:, input1_col])], val_y),
                             epochs=EPOCHS,  shuffle=True, batch_size=64,
-                            callbacks=[Cal_acc(val_x, y.iloc[test_idx], fold )]
+                            callbacks=[Cal_acc( val_x, y.iloc[test_idx] )]
                       #steps_per_epoch=1000, validation_steps=10
                       )
 
@@ -164,12 +181,13 @@ def train_base(args):
 
 class Cal_acc(Callback):
 
-    def __init__(self, val_x, y , fold):
+    def __init__(self, val_x, y):
         super(Cal_acc, self).__init__()
         self.val_x , self.y = val_x, y
-        self.min_len = get_args().min_len
+        self.min_len = int(SEQ_LEN*get_args().min_len_ratio)
         self.max_bin = get_args().max_bin
-        self.fold = fold
+        self.fold = get_args().fold
+        self.window = get_args().window
         self.threshold = 0
         self.feature_len = self.val_x.shape[1]
 
@@ -220,21 +238,21 @@ class Cal_acc(Callback):
                 tmp_val_mean = tmp_val.groupby('app_id').mean()
                 tmp_val_max = tmp_val.groupby('app_id').max()
                 for name, df in [('mean', tmp_val_mean), ('max', tmp_val_max)]:
-                    acc1, acc2, total = accuracy(df)
+                    acc1, acc2, total, acc3, acc4 = accuracy(df)
                     logger.info(f'Val({name})#{len(df)}/{df_len}, bin#{bin_list}, acc1:{acc1}, acc2:{acc2}, total:<<<{total}>>>')
             else:
                 logger.info(f'Can not find bin:{bin_list} in val')
-        return acc1, acc2, total, res_val
+        return acc1, acc2, total, acc3, acc4,res_val
 
 
     def on_train_end(self, logs=None):
         grow= max(self.score_list) - self.threshold
-        logger.info(f'Fold:{self.fold}, max:{max(self.score_list):7.6f}/{grow:+6.5f}, at {np.argmax(self.score_list)}/{len(self.score_list)-1}, Train his:{self.score_list}, max_bin:{self.max_bin}, min_len:{self.min_len}, gen_file:{self.gen_file}')
+        logger.info(f'Fold:{self.fold}, max:{max(self.score_list):7.6f}/{grow:+6.5f}, at {np.argmax(self.score_list)}/{len(self.score_list)-1}, Train his:{self.score_list}, max_bin:{self.max_bin}, min_len:{self.min_len}, SEQ_LEN:{SEQ_LEN}, gen_file:{self.gen_file}')
         logger.info(f'Input args:{get_args()}')
 
     def on_epoch_end(self, epoch, logs=None):
         print('\n')
-        acc1, acc2, total, val = self.cal_acc()
+        acc1, acc2, total, acc3, acc4, val = self.cal_acc()
 
         self.score_list.append(round(total,6))
 
@@ -257,14 +275,15 @@ class Cal_acc(Callback):
             self.gen_file=True
             test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}_f{self.fold}')
             len_raw_val = len(val.loc[val.bin == 0])
-            oof_file = f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val):05}_b{get_args().max_bin}_e{epoch}_m{self.min_len}.h5'
+            min_len_ratio = get_args().min_len_ratio
+            oof_file = f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val):05}_b{get_args().max_bin}_e{epoch}_m{min_len_ratio:2.1f}_L{SEQ_LEN}_w{self.window}.h5'
             self.save_stack_feature(val, test, oof_file)
         else:
             logger.info(f'Only gen sub file if the local score >={self.threshold}, current score:{total}')
 
         self.max_score = max(self.max_score, total)
 
-        logger.info(f'Epoch#{epoch},max_bin:{get_args().max_bin}, oof:{oof_prefix}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>, Fold:{self.fold},')
+        logger.info(f'Epoch#{epoch},max_bin:{get_args().max_bin}, oof:{oof_prefix}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>, acc3:{acc3}, acc4:{acc4}, Fold:{self.fold},')
 
         print('\n')
 
@@ -281,10 +300,10 @@ class Cal_acc(Callback):
         logger.info(f'OOF file save to :{file_path}')
         return train, test
 
-    @staticmethod
+
     @timed()
     #./output/model/1562899782/model_6114_0.65403_2.h5
-    def gen_sub(model , info='bert_' , partition_len = 5000):
+    def gen_sub(self, model , info='bert_' , partition_len = 5000):
 
         #frac = get_args().frac
         _, _, test = get_train_test_bert()
@@ -306,59 +325,61 @@ class Cal_acc(Callback):
         res = pd.concat(res_list)
         res['bin'] = res.index.str[-1].values.astype(int)
         raw_predict = res.copy()
-        #print('\nafter concat\n', res.iloc[:3, :3].head())
-        res['id'] = res.index
-        res.index.name = 'id'
-        res.to_pickle(f'./output/tmp_sub.pkl')
+
+        with timed_bolck(f'Try to gen sub file for fold#{self.fold}'):
+            #print('\nafter concat\n', res.iloc[:3, :3].head())
+            res['id'] = res.index
+            res.index.name = 'id'
+            # res.to_pickle(f'./output/tmp_sub.pkl')
 
 
-        #print('\nend res\n', res.iloc[:3, :3].head())
+            #print('\nend res\n', res.iloc[:3, :3].head())
 
 
 
-        res_mean = res.copy(deep=True)
-        res_mean['id'] = res_mean.id.apply(lambda val: val.split('_')[0])
-        res_select = res_mean.groupby('id')['bin'].agg({'bin_max': 'max'})
-        res_select.head()
-        res_select = res_select.loc[res_select.bin_max == 3]
-        res_mean = res_mean.loc[(res_mean.bin == 0)
-                                | ((res_mean.bin == 1) & (res_mean.id.isin(res_select.index)))
-                                ]
-        logger.info(f'Try to cal avg for res_mean:\n{res_mean.bin.value_counts()}')
-        res_mean_len = len(res_mean)
-        res_mean = res_mean.groupby('id').mean().sort_index()
-        del res_mean['bin']
+            res_mean = res.copy(deep=True)
+            res_mean['id'] = res_mean.id.apply(lambda val: val.split('_')[0])
+            res_select = res_mean.groupby('id')['bin'].agg({'bin_max': 'max'})
+            res_select.head()
+            res_select = res_select.loc[res_select.bin_max == 3]
+            res_mean = res_mean.loc[(res_mean.bin == 0)
+                                    | ((res_mean.bin == 1) & (res_mean.id.isin(res_select.index)))
+                                    ]
+            logger.info(f'Try to cal avg for res_mean:\n{res_mean.bin.value_counts()}')
+            res_mean_len = len(res_mean)
+            res_mean = res_mean.groupby('id').mean().sort_index()
+            del res_mean['bin']
 
 
-        res_0 = res.copy(deep=True)
-        res_0 = res_0.loc[res_0.bin == 0]
-        res_0.index  = res_0.id.apply(lambda val: val.split('_')[0])
-        #print('\nres_0\n', res_0.loc[:, ['id', 'bin']].head(3))
-        res_0 = res_0.sort_index()
-        res_0 = res_0.drop(columns=['id','bin'], axis=1, errors='ignore')
+            res_0 = res.copy(deep=True)
+            res_0 = res_0.loc[res_0.bin == 0]
+            res_0.index  = res_0.id.apply(lambda val: val.split('_')[0])
+            #print('\nres_0\n', res_0.loc[:, ['id', 'bin']].head(3))
+            res_0 = res_0.sort_index()
+            res_0 = res_0.drop(columns=['id','bin'], axis=1, errors='ignore')
 
-        for name, res in [('single',res_0), (f'mean_{res_mean_len}', res_mean)]:
-            res = res.copy()
-            #logger.info(f'{name} Check:\n{res.iloc[:3,:num_classes].sum(axis=1)}')
+            for name, res in [('single',res_0), (f'mean_{res_mean_len}', res_mean)]:
+                res = res.copy()
+                #logger.info(f'{name} Check:\n{res.iloc[:3,:num_classes].sum(axis=1)}')
 
-            res['label1'] = res.iloc[:, :num_classes].idxmax(axis=1)
+                res['label1'] = res.iloc[:, :num_classes].idxmax(axis=1)
 
-            # Exclude top#1
-            for index, col in res.label1.items():
-                res.loc[index, col] = np.nan
+                # Exclude top#1
+                for index, col in res.label1.items():
+                    res.loc[index, col] = np.nan
 
-            res['label2'] = res.iloc[:, :num_classes].idxmax(axis=1)
+                res['label2'] = res.iloc[:, :num_classes].idxmax(axis=1)
 
 
-            for col in ['label1','label2']:
-                res[col] = res[col].replace(id2label)
+                for col in ['label1','label2']:
+                    res[col] = res[col].replace(id2label)
 
-            # info = info.replace('.','')
-            # sub_file = f'./output/sub/v19_{info}_{name}.csv'
-            # res[['label1', 'label2']].to_csv(sub_file)
-            # logger.info(f'Sub file save to :{sub_file}')
+                # info = info.replace('.','')
+                # sub_file = f'./output/sub/v19_{info}_{name}.csv'
+                # res[['label1', 'label2']].to_csv(sub_file)
+                # logger.info(f'Sub file save to :{sub_file}')
 
-        logger.info(f'res_0 Check:\n{res_0.iloc[:3, :num_classes].sum(axis=1)}')
+            logger.info(f'res_0 Check:\n{res_0.iloc[:3, :num_classes].sum(axis=1)}')
 
         return raw_predict #res.drop(columns=['id','bin'], axis=1, errors='ignore')
 
@@ -371,8 +392,13 @@ class Cal_acc(Callback):
         return score_list if score_list else [0]
 
 if __name__ == '__main__':
+    FUNCTION_MAP = {'train_base': train_base,
+                    }
+
     args = get_args()
-    args.func(args)
+
+    func = FUNCTION_MAP[args.command]
+    func()
 
 """
 

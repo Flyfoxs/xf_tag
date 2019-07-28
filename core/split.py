@@ -22,7 +22,8 @@ def get_split_group():
 
 
 
-def split_df_by_index(index, fold):
+def split_df_by_index(df, fold):
+    index = df.index
     app_id = pd.Series(index).apply(lambda val: val.split('_')[0])
     bin   = pd.Series(index).apply(lambda val: val.split('_')[-1]).astype(int)
     df = pd.concat([app_id,bin], axis=1)
@@ -35,7 +36,7 @@ def split_df_by_index(index, fold):
 
     train_bin = list(range(get_args().max_bin+1))
 
-    val_bin= [0,1]
+    val_bin= train_bin #[0,1]
 
     logger.info(f'split base on: train_bin:{train_bin}, val_bin:{val_bin}')
     logger.info(f'The original bin_id distribution in train data set:\n {df.loc[(df.app_id.isin(train_bin))].bin.value_counts()}')

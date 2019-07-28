@@ -1,3 +1,5 @@
+from random import randrange
+
 input_dir = './input/zip/'
 
 type_dict = {
@@ -13,9 +15,11 @@ num_classes = 152
 
 oof_prefix = 'v6'
 
+
+bert_wv = "./input/bert.kv"
 ####Bert Config
 import os
-SEQ_LEN=128
+SEQ_LEN=128-randrange(0, 5)*8
 pretrained_path = './input/model/chinese_L-12_H-768_A-12'
 config_path = os.path.join(pretrained_path, 'bert_config.json')
 checkpoint_path = os.path.join(pretrained_path, 'bert_model.ckpt')

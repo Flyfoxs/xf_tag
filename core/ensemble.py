@@ -78,9 +78,7 @@ def get_feature_oof(top=2, weight=1):
 
 
 def gen_sub_file(res, file_name):
-
-
-    res = res.loc[res.label == '0'].copy()
+    res = res.copy()
     res.loc[:, 'label1'] = res.iloc[:, :num_classes].idxmax(axis=1)
 
     with timed_bolck('exclude label1'):
@@ -89,10 +87,11 @@ def gen_sub_file(res, file_name):
 
     res.loc[:, 'label2'] = res.iloc[:, :num_classes].idxmax(axis=1)
     res.index.name = 'id'
-
-    sub_file = f'./output/sub/{file_name}'
-    res[['label1', 'label2']].to_csv(sub_file)
-    logger.info(f'Sub file save to :{sub_file}')
+    if file_name:
+        sub_file = f'./output/sub/{file_name}'
+        res[['label1', 'label2']].to_csv(sub_file)
+        logger.info(f'Sub file save to :{sub_file}')
+    return res
 
 
 
@@ -115,7 +114,7 @@ def get_best_weight(file):
 
     score ={}
 
-    for weight in np.arange(0.7, 1.01, 0.05):
+    for weight in tqdm(np.arange(0.7, 1.01, 0.05), desc=f'Cal best for {file}'):
         weight = round(weight, 2)
         tmp = df.copy()
         tmp.loc[tmp.bin == 0, col_list] = tmp.loc[tmp.bin == 0, col_list] * weight
@@ -129,7 +128,7 @@ def get_best_weight(file):
         print(tmp.shape)
         tmp.label = tmp.label.astype(int)
         # print(tmp.shape)
-        acc1, acc2, total = accuracy(tmp)
+        acc1, acc2, total, acc3, acc4 = accuracy(tmp)
         score[weight] = total
 
     logger.info(f'Score list for file:{file}\n{score}')
@@ -149,11 +148,12 @@ def get_best_weight(file):
 if __name__== '__main__':
     from core.ensemble import *
     top = 2
-    weight=-1
-    #sub = gen_sub_mean(2, weight=-1)
-    res = get_feature_oof(top, weight)
-    file_name = f'mean_top{top}_{int(weight * 100):03}.csv'
-    res = gen_sub_file(res, file_name)
+
+    for weight in [1, 0.95, -1]:
+        with timed_bolck(f'Cal sub for weight:{weight:3.2f}'):
+            res = get_feature_oof(top, weight)
+            file_name = f'mean_top{top}_{int(weight * 100):03}.csv'
+            res = gen_sub_file(res.loc[res.label == '0'], file_name)
 
 
 

@@ -23,10 +23,12 @@ def get_train_test_bert():
 
     frac = get_args().frac
     max_bin = get_args().max_bin
-    min_len = get_args().min_len
+    min_len = int(SEQ_LEN*get_args().min_len_ratio)
 
-    bert = get_feature_bert()
-    manual = get_feature_manual(n_topic)
+    bert = get_feature_bert(SEQ_LEN)
+    manual = get_feature_bert_wv().add_prefix('fea_')
+    manual['app_id'] = manual.index.str[:32].values
+    manual = manual.drop_duplicates('app_id')
 
     old_shape = bert.shape
     data = pd.merge(bert, manual, how='left', on=['app_id'])
@@ -73,8 +75,9 @@ def get_train_test_bert():
 
 
 @timed()
-def manual_train(args):
+def manual_train():
     #frac = args.frac
+    args = get_args()
     fold = args.fold
     EPOCHS = args.epochs
 
@@ -107,9 +110,10 @@ def manual_train(args):
 
         # New input from manual
 
-        data = get_feature_manual(n_topic)
+        data = get_feature_bert_wv().add_prefix('fea_')
         manual_fea_len = len([col for col in data.columns if col.startswith('fea_')])
 
+        logger.info(f'manual_fea_len:{manual_fea_len}')
         manual_feature = keras.Input(shape=(manual_fea_len,), name='manual_feature', dtype='float32')
         inputs = inputs + [manual_feature]
 
@@ -146,7 +150,7 @@ def manual_train(args):
 
     with timed_bolck(f'Training#{fold}'):
         from core.split import split_df_by_index
-        train_idx, test_idx = split_df_by_index(pd.Series(X.index),fold)
+        train_idx, test_idx = split_df_by_index(X,fold)
 
         logger.info(f'Shape train_x.loc[:, input1_col].iloc[:,0]: {X.loc[:, input1_col].iloc[:,0].shape}')
         train_x, train_y, val_x, val_y = \
@@ -173,7 +177,7 @@ def manual_train(args):
                                                ],
                                                val_y),
                             epochs=EPOCHS,  shuffle=True, batch_size=64,
-                            callbacks=[Cal_acc(val_x, y.iloc[test_idx], fold )]
+                            callbacks=[Cal_acc(val_x, y.iloc[test_idx] )]
                       #steps_per_epoch=1000, validation_steps=10
                       )
 
@@ -185,12 +189,12 @@ def manual_train(args):
 
 class Cal_acc(Callback):
 
-    def __init__(self, val_x, y , fold):
+    def __init__(self, val_x, y ):
         super(Cal_acc, self).__init__()
         self.val_x , self.y = val_x, y
-        self.min_len = get_args().min_len
+        self.min_len = int(SEQ_LEN*get_args().min_len_ratio)
         self.max_bin = get_args().max_bin
-        self.fold = fold
+        self.fold = get_args().fold
         self.threshold = 0
         self.feature_len = self.val_x.shape[1]
 
@@ -244,11 +248,11 @@ class Cal_acc(Callback):
                 tmp_val_mean = tmp_val.groupby('app_id').mean()
                 tmp_val_max = tmp_val.groupby('app_id').max()
                 for name, df in [('mean', tmp_val_mean), ('max', tmp_val_max)]:
-                    acc1, acc2, total = accuracy(df)
+                    acc1, acc2, total, acc3, acc4 = accuracy(df)
                     logger.info(f'Val({name})#{len(df)}/{df_len}, bin#{bin_list}, acc1:{acc1}, acc2:{acc2}, total:<<<{total}>>>')
             else:
                 logger.info(f'Can not find bin:{bin_list} in val')
-        return acc1, acc2, total, res_val
+        return acc1, acc2, total,acc3, acc4, res_val
 
 
     def on_train_end(self, logs=None):
@@ -258,7 +262,7 @@ class Cal_acc(Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         print('\n')
-        acc1, acc2, total, val = self.cal_acc()
+        acc1, acc2, total, acc3, acc4, val = self.cal_acc()
 
         self.score_list.append(round(total,6))
 
@@ -392,12 +396,17 @@ class Cal_acc(Callback):
         return score_list if score_list else [0]
 
 if __name__ == '__main__':
+    FUNCTION_MAP = {'manual_train': manual_train,
+                    }
+
     args = get_args()
-    args.func(args)
+
+    func = FUNCTION_MAP[args.command]
+    func()
 
 """
 
-nohup python -u ./core/bert_manual.py --frac=0.1  manual_train  > test.log 2>&1 &
+nohup python -u ./core/bert_manual.py manual_train  > test.log 2>&1 &
 
 
 nohup python -u ./core/bert.py --fold=4 --max_bin=2 train_base  > test_4.log 2>&1 &
