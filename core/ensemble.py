@@ -76,9 +76,9 @@ def get_feature_oof(top=2, weight=1):
     oof.label = oof.label.fillna(0).astype(int).astype(str)
     return oof
 
-
 def gen_sub_file(res, file_name):
     res = res.copy()
+    res_raw = res.copy()
     res.loc[:, 'label1'] = res.iloc[:, :num_classes].idxmax(axis=1)
 
     with timed_bolck('exclude label1'):
@@ -88,10 +88,13 @@ def gen_sub_file(res, file_name):
     res.loc[:, 'label2'] = res.iloc[:, :num_classes].idxmax(axis=1)
     res.index.name = 'id'
     if file_name:
-        sub_file = f'./output/sub/{file_name}'
+        sub_file = f'./output/sub/{oof_prefix}_{file_name}'
         res[['label1', 'label2']].to_csv(sub_file)
         logger.info(f'Sub file save to :{sub_file}')
-    return res
+
+    res_raw['label1'] = res['label1']
+    res_raw['label2'] = res['label2']
+    return res_raw
 
 
 
@@ -129,6 +132,7 @@ def get_best_weight(file):
         tmp.label = tmp.label.astype(int)
         # print(tmp.shape)
         acc1, acc2, total, acc3, acc4 = accuracy(tmp)
+        logger.info(f'weight:{weight}, acc1:{acc1}, acc2:{acc2}, total:<<<{total}>>>. File:{file}')
         score[weight] = total
 
     logger.info(f'Score list for file:{file}\n{score}')

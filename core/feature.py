@@ -152,10 +152,13 @@ def split_app_des(df, split_len=SEQ_LEN):
     return pd.concat(df_list, axis=0)
 
 
+
 @lru_cache()
+@timed()
 def get_label_id():
     app_type = pd.read_csv(f'{input_dir}/apptype_id_name.txt', delimiter='\t', quoting=3, names=['type_id', 'type_name'],
                           dtype=type_dict)
+    app_type = app_type.loc[app_type.type_id.str.len()>=6]
     labels = app_type.type_id.values.tolist()
     # Construction of label2id and id2label dicts
     label2id = {l: i for i, l in enumerate(set(labels))}
@@ -337,7 +340,7 @@ def accuracy(res):
     y = y.replace(id2label)
     #logger.info(f'Y=\n{y.head()}')
 
-    for i in tqdm(range(1,5,1), 'cal acc for label1(+)'):
+    for i in tqdm(range(1,5,1), f'cal acc for label(+)'):
         res[f'label{i}'] = res.iloc[:, :num_classes].idxmax(axis=1)#.values
         #Exclude top#1
         for index, col in res[f'label{i}'].items():
@@ -349,7 +352,7 @@ def accuracy(res):
     acc3 = sum(res['label3'].values.astype(int) == y.values.astype(int)) / len(res)
     acc4 = sum(res['label4'].values.astype(int) == y.values.astype(int)) / len(res)
 
-    return acc1, acc2, acc1+acc2, acc3, acc4
+    return round(acc1,5), round(acc2,5), round(acc1+acc2,5), round(acc3,5), round(acc4,5)
 
 
 
@@ -510,7 +513,7 @@ class Bert_Embed():
 
         ids = app_type.type_name.apply(lambda text: '101,' + get_ids_from_text(text)[1] + ',102')
 
-        df = pd.DataFrame(np.zeros((152, 128))).add_prefix('bert_')
+        df = pd.DataFrame(np.zeros((len(app_type), 128))).add_prefix('bert_')
 
         tmp = ids.str.split(',', expand=True).add_prefix('bert_').fillna(0).astype(int)
 
@@ -658,7 +661,7 @@ def get_args():
 
     from random import randrange
     parser.add_argument("--fold", type=int, default=0, help="Split fold")
-    parser.add_argument("--max_bin", type=int, default=0, help="How many bin need to train")
+    parser.add_argument("--max_bin", type=int, default=randrange(0, 4), help="How many bin need to train")
     parser.add_argument("--min_len_ratio", type=float, default=0.9, help="The generated seq less than min_len will be drop")
     parser.add_argument("--epochs", type=int, default=randrange(2, 4), help="How many epoch is need, default is 2 or 3")
     parser.add_argument("--frac", type=float, default=1.0, help="How many sample will pick")

@@ -127,7 +127,7 @@ def manual_train():
 
         #fc_ex = keras.layers.Dense(units=1024, activation='softmax')(fc_ex)
 
-        outputs = keras.layers.Dense(units=152, activation='softmax')(fc_ex)
+        outputs = keras.layers.Dense(units=num_classes, activation='softmax')(fc_ex)
 
         model = keras.models.Model(inputs, outputs)
         model.compile(

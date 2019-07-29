@@ -30,11 +30,9 @@ def get_train_test_bert():
     #Keep all the bin group, if it's test data
     data = data.loc[(data.bin<=max_bin) | (pd.isna(data.type_id))]
 
-    timed_bolck('Remove gan data, and len is less then 100')
-
-    data = data.loc[ (data.bin == 0) | (data['len_'] >= min_len) ]
-
-    logger.info(f'Train max_bin:{max_bin},Total Bin distribution:\n{data.bin.value_counts().sort_index()}')
+    with timed_bolck(f'Remove gan data, and len is less then {min_len}'):
+        data = data.loc[ (data.bin == 0) | (data['len_'] >= min_len) ]
+        logger.info(f'Train max_bin:{max_bin},Total Bin distribution:\n{data.bin.value_counts().sort_index()}')
 
     data = data.sort_index()
     logger.info(f'Head of the data:\n, {data.iloc[:3,:3]}')
@@ -104,9 +102,6 @@ def train_base():
     with timed_bolck(f'Prepare train data#{BATCH_SIZE}'):
         X, y, _ = get_train_test_bert()
 
-
-
-
         ##Begin to define model
         from keras_bert import load_trained_model_from_checkpoint
 
@@ -119,7 +114,7 @@ def train_base():
         dense = model.get_layer('NSP-Dense').output
         keras.models.Model(inputs, dense).summary()
 
-        outputs = keras.layers.Dense(units=152, activation='softmax')(dense)
+        outputs = keras.layers.Dense(units=num_classes, activation='softmax')(dense)
 
         decay_steps, warmup_steps = calc_train_steps(
             y.shape[0],
@@ -159,9 +154,9 @@ def train_base():
         input1 = train_x.loc[:, input1_col]#.astype(np.float32)
         input2 = np.zeros_like(input1)#.astype(np.int8)
 
-        logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}')
-
         logger.info(f'NN train_x:{train_x[:3]}')
+
+        logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}, SEQ_LEN:{SEQ_LEN}, ')
 
         from keras_bert import get_custom_objects
         import tensorflow as tf
@@ -193,7 +188,7 @@ class Cal_acc(Callback):
 
         self.max_score = 0
 
-        self.score_list = []
+        self.score_list = np.zeros(3)
         self.gen_file = False
 
         import time, os
@@ -223,7 +218,8 @@ class Cal_acc(Callback):
 
         logger.info(f'val bin:\n {val.bin.value_counts()}')
         #y2['bin'] = pd.Series(y2.index).str[-1].values.astype(int)
-        for bin_list in [[0,1], [0]]:
+        todo_list = [[0,1], [0]] if len(val.bin.value_counts()) > 1 and get_args().max_bin > 1 else [[0]]
+        for bin_list in todo_list:
             tmp_val = val.loc[val.bin.isin(bin_list)].copy()
             if len(tmp_val)>0:
 
@@ -237,7 +233,8 @@ class Cal_acc(Callback):
 
                 tmp_val_mean = tmp_val.groupby('app_id').mean()
                 tmp_val_max = tmp_val.groupby('app_id').max()
-                for name, df in [('mean', tmp_val_mean), ('max', tmp_val_max)]:
+                todo_df = [('mean', tmp_val_mean), ('max', tmp_val_max)] if len(bin_list) > 1 else [('mean', tmp_val_mean)]
+                for name, df in todo_df:
                     acc1, acc2, total, acc3, acc4 = accuracy(df)
                     logger.info(f'Val({name})#{len(df)}/{df_len}, bin#{bin_list}, acc1:{acc1}, acc2:{acc2}, total:<<<{total}>>>')
             else:
@@ -247,14 +244,14 @@ class Cal_acc(Callback):
 
     def on_train_end(self, logs=None):
         grow= max(self.score_list) - self.threshold
-        logger.info(f'Fold:{self.fold}, max:{max(self.score_list):7.6f}/{grow:+6.5f}, at {np.argmax(self.score_list)}/{len(self.score_list)-1}, Train his:{self.score_list}, max_bin:{self.max_bin}, min_len:{self.min_len}, SEQ_LEN:{SEQ_LEN}, gen_file:{self.gen_file}')
+        logger.info(f'Fold:{self.fold}, max:{max(self.score_list):7.6f}/{grow:+6.5f}, at {np.argmax(self.score_list)}/{len(self.score_list)-1}, Train his:{self.score_list}, max_bin:{self.max_bin}, min_len:{self.min_len:03}, SEQ_LEN:{SEQ_LEN:03}, gen_file:{self.gen_file}')
         logger.info(f'Input args:{get_args()}')
 
     def on_epoch_end(self, epoch, logs=None):
         print('\n')
         acc1, acc2, total, acc3, acc4, val = self.cal_acc()
 
-        self.score_list.append(round(total,6))
+        self.score_list[epoch] =  round(total,6)
 
         # if total >= 0.65:
         #     model_path = f'{self.model_folder}/model_{self.feature_len}_{total:6.5f}_{epoch}.h5'
@@ -276,7 +273,7 @@ class Cal_acc(Callback):
             test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}_f{self.fold}')
             len_raw_val = len(val.loc[val.bin == 0])
             min_len_ratio = get_args().min_len_ratio
-            oof_file = f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val):05}_b{get_args().max_bin}_e{epoch}_m{min_len_ratio:2.1f}_L{SEQ_LEN}_w{self.window}.h5'
+            oof_file = f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val):05}_b{get_args().max_bin}_e{epoch}_m{min_len_ratio:2.1f}_L{SEQ_LEN:03}_w{self.window}.h5'
             self.save_stack_feature(val, test, oof_file)
         else:
             logger.info(f'Only gen sub file if the local score >={self.threshold}, current score:{total}')
