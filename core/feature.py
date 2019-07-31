@@ -102,6 +102,12 @@ def get_ids_from_text(text):
         token_ids = tokenizer._convert_tokens_to_ids(tokens)
         return token_ids
     ids = convert_tokens_to_ids(text)
+
+    cur_len = len(ids)
+    if cur_len >= SEQ_LEN * 1.1:
+        cut_ratio = get_args().cut_ratio
+        ids = ids[:-round(cut_ratio*cur_len)]
+
     return [len(ids), ','.join([str(id) for id in ids])]
 
 
@@ -112,8 +118,7 @@ def get_app_des_2_ids(data):
         # On app_id have multiply type_id
         ids = np.array(list([get_ids_from_text(text) for text in data.app_des.values.tolist()]))
 
-    data['ids_lens'] = ids[:, 0].astype(int)
-    data['ids_lens_total'] = data['ids_lens']
+    data['ids_lens_total'] = ids[:, 0].astype(int)
 
     data['ids'] = ids[:, 1]
 
@@ -131,15 +136,15 @@ def split_app_des(df, split_len=SEQ_LEN):
     def split_ids(ids, seq_len, window, i):
         ids = ids.split(',')
         ids = ['101'] + ids[i * window : i * window + seq_len] + ['102']
-        return pd.Series({'ids':','.join(ids), 'ids_lens': len(ids)})
+        return pd.Series({'ids':','.join(ids), 'ids_lens_bin': len(ids)})
 
 
     window = get_args().window
     for i in tqdm(range(4), desc=f'split app des, window:{window}, seq_len:{seq_len}'):
-        tmp = df.loc[(df.ids_lens > i * window)].copy()
+        tmp = df.loc[(df.ids_lens_total > i * window)].copy()
         if len(tmp)==0:
             break
-        tmp[['ids', 'ids_lens']] = tmp.ids.apply(lambda val: split_ids(val, seq_len, window, i))
+        tmp[['ids', 'ids_lens_bin']] = tmp.ids.apply(lambda val: split_ids(val, seq_len, window, i))
         tmp['bin'] = i
         tmp['app_id_ex_bin'] = tmp.app_id_ex + '_' + str(i)
 
@@ -326,35 +331,34 @@ def load_embedding_gensim(path_txt):
 
 
 @timed()
-def accuracy(res):
-    if res is None or len(res)==0:
-        return 0, 0, 0
+def accuracy(res, topn=2):
+
+    if res is None or len(res) == 0:
+        raise Exception(f'input is none')
+
+    res = res.fillna(0)
 
     res = res.loc[res.label.astype(float) > 0].copy()
     logger.info(f'Accuracy base on res:{res.shape}')
 
-    y = res.loc[:,'label'].copy().astype(int)#.astype(str)
+    y = res.loc[:, 'label'].copy().astype(int)  # .astype(str)
 
     _, id2label = get_label_id()
 
     y = y.replace(id2label)
-    #logger.info(f'Y=\n{y.head()}')
+    # logger.info(f'Y=\n{y.head()}')
 
-    for i in tqdm(range(1,5,1), f'cal acc for label(+)'):
-        res[f'label{i}'] = res.iloc[:, :num_classes].idxmax(axis=1)#.values
-        #Exclude top#1
+    res_list = np.zeros(topn)
+    for i in tqdm(range(1, topn + 1, 1), desc=f'cal acc for label(+)'):
+        res[f'label{i}'] = res.loc[:, id2label.values()].idxmax(axis=1)  # .values
+        # Exclude top#1
+
         for index, col in res[f'label{i}'].items():
-            #logger.info(f'top#1 is {index}, {col}')
+            # logger.info(f'top#1 is {index}, {col}')
             res.loc[index, col] = np.nan
+        res_list[i - 1] = sum(res[f'label{i}'].values.astype(int) == y.values.astype(int)) / len(res)
 
-    acc1 = sum(res['label1'].values.astype(int) == y.values.astype(int)) / len(res)
-    acc2 = sum(res['label2'].values.astype(int) == y.values.astype(int)) / len(res)
-    acc3 = sum(res['label3'].values.astype(int) == y.values.astype(int)) / len(res)
-    acc4 = sum(res['label4'].values.astype(int) == y.values.astype(int)) / len(res)
-
-    return round(acc1,5), round(acc2,5), round(acc1+acc2,5), round(acc3,5), round(acc4,5)
-
-
+    return list(np.cumsum(res_list))
 
 @timed()
 @file_cache()
@@ -588,20 +592,39 @@ def get_feature_bert(seq_len):
         bert['app_id'] = data.app_id.values
         bert['app_id_ex'] = data.app_id_ex.values
         bert['app_id_ex_bin'] = data.app_id_ex_bin.values
+
+        bert['ids_lens_bin'] = data.ids_lens_bin.values
+        bert['ids_lens_total'] = data.ids_lens_total.values
+
         bert['bin'] = data.bin.values
-        bert['len_'] = data.len_.values
         if 'app_des' in raw: del raw['app_des']
         del raw['app_id']
-        del raw['len_']
         bert = pd.merge(bert, raw, how='left', on=['app_id_ex'])
 
         bert.index = bert.app_id_ex_bin
         logger.info(f'Merge extend shape from {old_shape}, {raw.shape} to {bert.shape}')
 
-    padding_analysis = bert.loc[:, f'bert_{SEQ_LEN-1}'].value_counts().sort_index()
-    logger.info(f'padding_analysis(bert_{SEQ_LEN-1}):\n{padding_analysis}')
+    padding_analysis = bert.loc[:, f'bert_{seq_len-1}'].value_counts().sort_index()
+    logger.info(f'padding_analysis(bert_{seq_len-1}):\n{padding_analysis}')
     return bert.sort_values(['app_id_ex_bin'], ascending=False)
 
+
+def get_feature_type_des(seq_len):
+    type_name = get_app_type()
+    ids = np.array(list([get_ids_from_text(text) for text in type_name.type_name.values.tolist()]))
+
+    ids = pd.Series(ids[:, 1])
+    ids = '101,' + ids + ',102'
+
+    tmp = ids.str.split(',', expand=True).add_prefix('fea_type_').fillna(0).astype(int)
+    tmp.index = type_name.index
+    type_name[tmp.columns] = tmp
+
+    for i in range(seq_len):
+        if f'fea_type_{i}' not in type_name:
+            type_name[f'fea_type_{i}'] = 0
+
+    return type_name
 
 @timed()
 @file_cache()
@@ -610,7 +633,7 @@ def get_feature_bert_wv():
         fname = Bert_Embed.get_embed_wordvec_file()
         import gensim
         word_vectors = gensim.models.KeyedVectors.load_word2vec_format(fname, binary=False)
-        raw_bert = get_feature_bert()
+        raw_bert = get_feature_bert(SEQ_LEN)
         label2id, id2label = get_label_id()
         df = pd.DataFrame(np.zeros((len(raw_bert), num_classes)), columns=label2id.keys(), index=raw_bert.index)
 
@@ -650,10 +673,6 @@ def get_feature_lda(n_topics):
     return pd.DataFrame(docres, columns=[f'fea_lda_{i}' for i in range(n_topics)], index=data.app_id)
 
 
-def batch_manual():
-    for n_topics in range(10, 100, 10):
-        get_feature_manual(n_topics)
-
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -662,10 +681,11 @@ def get_args():
     from random import randrange
     parser.add_argument("--fold", type=int, default=0, help="Split fold")
     parser.add_argument("--max_bin", type=int, default=randrange(0, 4), help="How many bin need to train")
-    parser.add_argument("--min_len_ratio", type=float, default=0.9, help="The generated seq less than min_len will be drop")
+    parser.add_argument("--min_len_ratio", type=float, default=0.8, help="The generated sample seq less than min_len will be drop")
     parser.add_argument("--epochs", type=int, default=randrange(2, 4), help="How many epoch is need, default is 2 or 3")
     parser.add_argument("--frac", type=float, default=1.0, help="How many sample will pick")
     parser.add_argument("--window", type=int, default=SEQ_LEN-2, help="Rolling to gen sample for training")
+    parser.add_argument("--cut_ratio", type=float, default=0.1, help="Reduce the end of the desc")
 
 
 
@@ -674,10 +694,79 @@ def get_args():
     args = parser.parse_args()
     return args
 
+@timed()
+def get_feature_bin(seq_len):
+    sample_bin = get_sample_bin()
+
+    app_des = get_feature_bert(seq_len)
+    select_col = [ col for col in app_des.columns if col.startswith('bert_')]
+    select_col = ['app_id'] + select_col
+    app_des = app_des.loc[app_des.bin==0].loc[:, select_col]
+
+    type_des = get_feature_type_des(seq_len)
+
+    sample_bin = pd.merge(sample_bin, app_des, how='left', on='app_id')
+    print(list(sample_bin.columns))
+    sample_bin = pd.merge(sample_bin, type_des, how='left', on='type_id')
+
+    sample_bin['app_id_bin'] = sample_bin.app_id + '_' + sample_bin.sn.astype(str)
+    sample_bin.index = sample_bin.app_id_bin
+
+    return sample_bin
+
+@timed()
+@file_cache()
+def get_sample_bin():
+    """
+    app_id_ex0, app_id_ex_bin,  type_id, predict_rank, predict_rank_ex,
+    :return:
+    """
+    from core.ensemble import get_feature_oof, gen_sub_file
+    top_file = 2
+    oof = get_feature_oof(top=top_file, weight=0)
+
+    # oof = oof.sample(frac=0.05)
+    # Make sure the real label put in label#1 column
+    for index, col in oof.label.items():
+        oof.loc[index, str(col)] = 1
+
+    top_label = 5
+    sub = gen_sub_file(oof, None, topn=top_label)
+
+    sub.index.name = 'app_id'
+    sub = sub.reset_index()
+
+    sample_list = []
+    for i in range(1, top_label + 1):
+        col_list = ['app_id', f'label{i}', f'label']
+        tmp = sub.loc[:, col_list].copy()
+        tmp.rename({f'label{i}': 'type_id'}, axis=1, inplace=True)
+
+        tmp['sn'] = i
+
+        tmp.label = tmp.label.astype(int)
+
+        # Test Sample
+        tmp.loc[tmp.label == 0, 'label'] = -1
+        if i == 1:
+            tmp.loc[tmp.label > 0, 'label'] = 1
+        else:
+            tmp.loc[tmp.label > 0, 'label'] = 0
+
+        sample_list.append(tmp)
+    res = pd.concat(sample_list)
+
+    res['app_id_bin'] = res.app_id + '_' + res.sn.astype(str)
+    return res.sort_values(['sn', 'app_id'])
+
+
+
 if __name__ == '__main__':
+    get_feature_bin = get_feature_bin(64)
     FUNCTION_MAP = {
                     'get_feature_bert_wv':get_feature_bert_wv,
                     'get_feature_bert':get_feature_bert,
+                    'get_feature_bin':get_feature_bin
                      }
 
     args = get_args()
@@ -688,7 +777,7 @@ if __name__ == '__main__':
 """
 nohup python -u core/feature.py get_feature_bert > feature.log 2>&1 &
 
-nohup python -u core/feature.py get_feature_bert_wv > feature.log 2>&1 &
+nohup python -u core/feature.py get_feature_bin > feature.log 2>&1 &
 
  
 

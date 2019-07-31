@@ -106,7 +106,7 @@ def train_base():
         from keras_bert import load_trained_model_from_checkpoint
 
         model = load_trained_model_from_checkpoint(config_path, checkpoint_path, training=True, seq_len=SEQ_LEN, )
-        #model.summary(line_length=120)
+        model.summary(line_length=120)
 
         from tensorflow.python import keras
         from keras_bert import AdamWarmup, calc_train_steps
@@ -155,8 +155,9 @@ def train_base():
         input2 = np.zeros_like(input1)#.astype(np.int8)
 
         logger.info(f'NN train_x:{train_x[:3]}')
-
-        logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}, SEQ_LEN:{SEQ_LEN}, ')
+        min_len_ratio = get_args().min_len_ratio
+        max_bin = get_args().max_bin
+        logger.info(f'NN Input1:{input1.shape}, Input2:{input2.shape}, SEQ_LEN:{SEQ_LEN}, min_len_ratio:{min_len_ratio}, bin:{max_bin} ')
 
         from keras_bert import get_custom_objects
         import tensorflow as tf
@@ -235,22 +236,24 @@ class Cal_acc(Callback):
                 tmp_val_max = tmp_val.groupby('app_id').max()
                 todo_df = [('mean', tmp_val_mean), ('max', tmp_val_max)] if len(bin_list) > 1 else [('mean', tmp_val_mean)]
                 for name, df in todo_df:
-                    acc1, acc2, total, acc3, acc4 = accuracy(df)
-                    logger.info(f'Val({name})#{len(df)}/{df_len}, bin#{bin_list}, acc1:{acc1}, acc2:{acc2}, total:<<<{total}>>>')
+                    score_list = accuracy(df, 5)
+
+                    logger.info(f'Val({name})#{len(df)}/{df_len}, bin#{bin_list}, score_list:{score_list}')
             else:
                 logger.info(f'Can not find bin:{bin_list} in val')
-        return acc1, acc2, total, acc3, acc4,res_val
+        return score_list,res_val
 
 
     def on_train_end(self, logs=None):
         grow= max(self.score_list) - self.threshold
-        logger.info(f'Fold:{self.fold}, max:{max(self.score_list):7.6f}/{grow:+6.5f}, at {np.argmax(self.score_list)}/{len(self.score_list)-1}, Train his:{self.score_list}, max_bin:{self.max_bin}, min_len:{self.min_len:03}, SEQ_LEN:{SEQ_LEN:03}, gen_file:{self.gen_file}')
+        cut_ratio = get_args().cut_ratio
+        logger.info(f'Train END: Fold:{self.fold}, max:{max(self.score_list):7.6f}/{grow:+6.5f}, at {np.argmax(self.score_list)}/{len(self.score_list)-1}, his:{self.score_list}, max_bin:{self.max_bin}, cut:{cut_ratio}, min_len:{self.min_len:03}, SEQ_LEN:{SEQ_LEN:03}, threshold:{self.threshold:7.6f}, gen_file:{self.gen_file}')
         logger.info(f'Input args:{get_args()}')
 
     def on_epoch_end(self, epoch, logs=None):
         print('\n')
-        acc1, acc2, total, acc3, acc4, val = self.cal_acc()
-
+        score_list, val = self.cal_acc()
+        total = score_list[1]
         self.score_list[epoch] =  round(total,6)
 
         # if total >= 0.65:
@@ -265,22 +268,24 @@ class Cal_acc(Callback):
         #threshold_map = {0:0.785, 1:0.77, 2:0.77, 3:0.77, 4:0.78}
         top_cnt =2
         top_score = self._get_top_score(self.fold)[:top_cnt]
-        logger.info(f'The top#{top_cnt} score for max_bin:{get_args().max_bin}, oof:{oof_prefix}, fold#{self.fold} is:{top_score}')
         self.threshold = top_score[-1] if len(top_score) == top_cnt else 0
+        logger.info(f'The top#{top_cnt} score for max_bin:{get_args().max_bin}, epoch:{epoch}, oof:{oof_prefix}, fold#{self.fold} is:{top_score}, cur_score:{total}, threshold:{self.threshold}')
         if ( round(total,4) > round(self.threshold,4) and epoch>=1 and total > self.max_score) or (get_args().frac<=0.1):
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             self.gen_file=True
+            grow = max(self.score_list) - self.threshold
+            logger.info(f'Fold:{self.fold}, epoch:{epoch}, MAX:{max(self.score_list):7.6f}/{grow:+6.5f}, threshold:{self.threshold}, score_list:{self.score_list}' )
             test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}_f{self.fold}')
             len_raw_val = len(val.loc[val.bin == 0])
             min_len_ratio = get_args().min_len_ratio
             oof_file = f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val):05}_b{get_args().max_bin}_e{epoch}_m{min_len_ratio:2.1f}_L{SEQ_LEN:03}_w{self.window}.h5'
             self.save_stack_feature(val, test, oof_file)
         else:
-            logger.info(f'Only gen sub file if the local score >={self.threshold}, current score:{total}')
+            logger.info(f'Epoch:{epoch}, only gen sub file if the local score >{self.threshold}, current score:{total}')
 
         self.max_score = max(self.max_score, total)
 
-        logger.info(f'Epoch#{epoch},max_bin:{get_args().max_bin}, oof:{oof_prefix}, max:{self.max_score:6.5f}, acc1:{acc1:6.5f}, acc2:{acc2:6.5f}, <<<total:{total:6.5f}>>>, acc3:{acc3}, acc4:{acc4}, Fold:{self.fold},')
+        logger.info(f'Epoch#{epoch} END,max_bin:{get_args().max_bin}, oof:{oof_prefix}, max:{self.max_score:6.5f}, score:{score_list}, Fold:{self.fold},')
 
         print('\n')
 
@@ -376,7 +381,7 @@ class Cal_acc(Callback):
                 # res[['label1', 'label2']].to_csv(sub_file)
                 # logger.info(f'Sub file save to :{sub_file}')
 
-            logger.info(f'res_0 Check:\n{res_0.iloc[:3, :num_classes].sum(axis=1)}')
+            #logger.info(f'res_0 Check:\n{res_0.iloc[:3, :num_classes].sum(axis=1)}')
 
         return raw_predict #res.drop(columns=['id','bin'], axis=1, errors='ignore')
 
@@ -385,7 +390,7 @@ class Cal_acc(Callback):
         from glob import glob
         file_list = sorted(glob(f'./output/stacking/{oof_prefix}_{fold}_*.h5'), reverse=True)
         score_list = [float(file.split('_')[2].replace('.h5', '')) for file in file_list]
-        logger.info(f'Score list for {fold} is {score_list}')
+        logger.info(f'Score list for fold#{fold} is {score_list}')
         return score_list if score_list else [0]
 
 if __name__ == '__main__':

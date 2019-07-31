@@ -38,7 +38,7 @@ def get_feature_oof(top=2, weight=1):
     test_list = []
 
     for file in file_list:
-        cur_weight = weight if weight >= 0 else get_best_weight(file)
+        cur_weight = weight if weight > 0 else get_best_weight(file)
 
         #Train begin
         tmp = pd.read_hdf(file, 'train')
@@ -76,24 +76,25 @@ def get_feature_oof(top=2, weight=1):
     oof.label = oof.label.fillna(0).astype(int).astype(str)
     return oof
 
-def gen_sub_file(res, file_name):
+@timed()
+def gen_sub_file(res, file_name, topn=2):
     res = res.copy()
     res_raw = res.copy()
-    res.loc[:, 'label1'] = res.iloc[:, :num_classes].idxmax(axis=1)
 
-    with timed_bolck('exclude label1'):
-        for index, col in res.label1.items():
+    for i in tqdm(range(1, 1+topn), desc=f'Cal label#1-{topn} value for res:{res.shape}'):
+        res.loc[:, f'label{i}'] = res.iloc[:, :num_classes].idxmax(axis=1)
+        res_raw.loc[:, f'label{i}'] = res.loc[:, f'label{i}']
+
+        for index, col in res[f'label{i}'].items():
             res.loc[index, col] = np.nan
 
-    res.loc[:, 'label2'] = res.iloc[:, :num_classes].idxmax(axis=1)
-    res.index.name = 'id'
+
     if file_name:
+        res.index.name = 'id'
         sub_file = f'./output/sub/{oof_prefix}_{file_name}'
         res[['label1', 'label2']].to_csv(sub_file)
         logger.info(f'Sub file save to :{sub_file}')
 
-    res_raw['label1'] = res['label1']
-    res_raw['label2'] = res['label2']
     return res_raw
 
 
@@ -131,8 +132,9 @@ def get_best_weight(file):
         print(tmp.shape)
         tmp.label = tmp.label.astype(int)
         # print(tmp.shape)
-        acc1, acc2, total, acc3, acc4 = accuracy(tmp)
-        logger.info(f'weight:{weight}, acc1:{acc1}, acc2:{acc2}, total:<<<{total}>>>. File:{file}')
+        score_list = accuracy(tmp)
+        logger.info(f'weight:{weight}, score_list:{score_list}. File:{file}')
+        total = score_list[1]
         score[weight] = total
 
     logger.info(f'Score list for file:{file}\n{score}')
@@ -148,16 +150,19 @@ def get_best_weight(file):
     return best_weight
 
 
-
 if __name__== '__main__':
     from core.ensemble import *
     top = 2
 
-    for weight in [1, 0.95, -1]:
+    for weight in [1, 0.95, 0]:
         with timed_bolck(f'Cal sub for weight:{weight:3.2f}'):
             res = get_feature_oof(top, weight)
-            file_name = f'mean_top{top}_{int(weight * 100):03}.csv'
+            train = res.loc[res.label != '0']
+            score_list = accuracy(train)
+            total = score_list[1]
+            file_name = f'mean_top{top}_{int(weight * 100):03}_{int(total*10**6):06}.csv'
             res = gen_sub_file(res.loc[res.label == '0'], file_name)
+            logger.info(f'Sub file save to:{file_name}')
 
 
 

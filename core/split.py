@@ -21,6 +21,21 @@ def get_split_group():
     return train_list, val_list
 
 
+@timed()
+def split_df_by_index_no_bin(df, fold):
+    #
+    # sn = pd.Series(df.index).str[-1].astype(int)
+    df = pd.Series(df.index).str[:32]
+
+
+
+    train_list, val_list = get_split_group()
+    train_gp = train_list[fold]
+    val_gp = val_list[fold]
+
+    return df.loc[(df.isin(train_gp))].index.values, \
+           df.loc[(df.isin(val_gp)) ].index.values
+
 
 def split_df_by_index(df, fold):
     index = df.index
