@@ -217,30 +217,12 @@ class Cal_acc(Callback):
         # res_val.to_pickle(f'./output/tmp_res_val.pkl')
         # logger.info(f'Debug file: save to ./output/tmp_res_val.pkl')
 
-        logger.info(f'val bin:\n {val.bin.value_counts()}')
-        #y2['bin'] = pd.Series(y2.index).str[-1].values.astype(int)
-        todo_list = [[0,1], [0]] if len(val.bin.value_counts()) > 1 and get_args().max_bin > 1 else [[0]]
-        for bin_list in todo_list:
-            tmp_val = val.loc[val.bin.isin(bin_list)].copy()
-            if len(tmp_val)>0:
+        num_labels = 10
+        df_score = val.loc[val.bin==0]
+        score_list = accuracy(df_score, num_labels)
 
-                df_len = len(tmp_val)
+        logger.info(f'{len(df_score)}/{len(res_val)}, fold:{self.fold}, score for label1-f{num_labels}:{score_list}')
 
-                tmp_val['bin'] = pd.Series(tmp_val.index).str[-1].astype(int)
-                tmp_val['app_id'] = tmp_val.index.str[:32].values
-                tmp_val = tmp_val.sort_values(['app_id', 'bin', 'label'])
-                #One sample can have 2 label in the original data
-                tmp_val = tmp_val.drop_duplicates(['app_id', 'bin'])
-
-                tmp_val_mean = tmp_val.groupby('app_id').mean()
-                tmp_val_max = tmp_val.groupby('app_id').max()
-                todo_df = [('mean', tmp_val_mean), ('max', tmp_val_max)] if len(bin_list) > 1 else [('mean', tmp_val_mean)]
-                for name, df in todo_df:
-                    score_list = accuracy(df, 5)
-
-                    logger.info(f'Val({name})#{len(df)}/{df_len}, bin#{bin_list}, score_list:{score_list}')
-            else:
-                logger.info(f'Can not find bin:{bin_list} in val')
         return score_list,res_val
 
 

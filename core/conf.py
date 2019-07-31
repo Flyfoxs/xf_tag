@@ -13,7 +13,7 @@ word2vec_tx_mini = './input/mini_tx.kv'
 
 num_classes = 126  #get_label_id()
 
-oof_prefix = 'v7'
+oof_prefix = 'v8'
 
 
 bert_wv = "./input/bert.kv"

@@ -358,7 +358,7 @@ def accuracy(res, topn=2):
             res.loc[index, col] = np.nan
         res_list[i - 1] = sum(res[f'label{i}'].values.astype(int) == y.values.astype(int)) / len(res)
 
-    return list(np.cumsum(res_list))
+    return np.round(np.cumsum(res_list),4)
 
 @timed()
 @file_cache()
