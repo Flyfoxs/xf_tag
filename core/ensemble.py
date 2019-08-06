@@ -152,17 +152,16 @@ def get_best_weight(file):
 
 if __name__== '__main__':
     from core.ensemble import *
-    top = 2
-
-    for weight in [1, 0.95, 0]:
-        with timed_bolck(f'Cal sub for weight:{weight:3.2f}'):
-            res = get_feature_oof(top, weight)
-            train = res.loc[res.label != '0']
-            score_list = accuracy(train)
-            total = score_list[1]
-            file_name = f'mean_top{top}_{int(weight * 100):03}_{int(total*10**6):06}.csv'
-            res = gen_sub_file(res.loc[res.label == '0'], file_name)
-            logger.info(f'Sub file save to:{file_name}')
+    for top in [2, 3]:
+        for weight in [ 0,  0.95, 1]:
+            with timed_bolck(f'Cal sub for top:{top}, weight:{weight:3.2f}'):
+                res = get_feature_oof(top, weight)
+                train = res.loc[res.label != '0']
+                score_list = accuracy(train)
+                total = score_list[1]
+                file_name = f'mean_top{top}_{int(weight * 100):03}_{int(total*10**6):06}.csv'
+                res = gen_sub_file(res.loc[res.label == '0'], file_name)
+                #logger.info(f'Sub file save to:{file_name}')
 
 
 

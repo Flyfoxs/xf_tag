@@ -13,7 +13,7 @@ word2vec_tx_mini = './input/mini_tx.kv'
 
 num_classes = 126  #get_label_id()
 
-oof_prefix = 'v8'
+oof_prefix = 'v9'
 
 
 bert_wv = "./input/bert.kv"
@@ -21,6 +21,7 @@ bert_wv = "./input/bert.kv"
 import os
 SEQ_LEN=128#-randrange(0, 5)*8
 pretrained_path = './input/model/chinese_L-12_H-768_A-12'
+#pretrained_path = './input/model/chinese_wwm_ext_L-12_H-768_A-12'
 config_path = os.path.join(pretrained_path, 'bert_config.json')
 checkpoint_path = os.path.join(pretrained_path, 'bert_model.ckpt')
 vocab_path = os.path.join(pretrained_path, 'vocab.txt')

@@ -105,6 +105,7 @@ def train_base():
         ##Begin to define model
         from keras_bert import load_trained_model_from_checkpoint
 
+        logger.info(f'Start to train base on checkpoint:{config_path}')
         model = load_trained_model_from_checkpoint(config_path, checkpoint_path, training=True, seq_len=SEQ_LEN, )
         model.summary(line_length=120)
 

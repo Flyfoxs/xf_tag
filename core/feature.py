@@ -106,7 +106,9 @@ def get_ids_from_text(text):
     cur_len = len(ids)
     if cur_len >= SEQ_LEN * 1.1:
         cut_ratio = get_args().cut_ratio
-        ids = ids[:-round(cut_ratio*cur_len)]
+        max_cut_num = get_args().max_cut_num
+        cut_len  = np.clip(round(cut_ratio*cur_len), 10, max_cut_num)
+        ids = ids[:-cut_len]
 
     return [len(ids), ','.join([str(id) for id in ids])]
 
@@ -686,6 +688,7 @@ def get_args():
     parser.add_argument("--frac", type=float, default=1.0, help="How many sample will pick")
     parser.add_argument("--window", type=int, default=SEQ_LEN-2, help="Rolling to gen sample for training")
     parser.add_argument("--cut_ratio", type=float, default=0.1, help="Reduce the end of the desc")
+    parser.add_argument("--max_cut_num", type=int, default=30, help="Reduce the end of the desc")
 
 
 
