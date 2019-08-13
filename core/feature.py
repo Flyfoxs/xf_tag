@@ -102,14 +102,6 @@ def get_ids_from_text(text):
         token_ids = tokenizer._convert_tokens_to_ids(tokens)
         return token_ids
     ids = convert_tokens_to_ids(text)
-
-    cur_len = len(ids)
-    if cur_len >= SEQ_LEN * 1.1:
-        cut_ratio = get_args().cut_ratio
-        max_cut_num = get_args().max_cut_num
-        cut_len  = np.clip(round(cut_ratio*cur_len), 10, max_cut_num)
-        ids = ids[:-cut_len]
-
     return [len(ids), ','.join([str(id) for id in ids])]
 
 
@@ -577,7 +569,7 @@ class Bert_Embed():
         return res
 
 @timed()
-@file_cache()
+@file_cache(prefix=oof_prefix)
 def get_feature_bert(seq_len):
 
     raw = get_raw_data()

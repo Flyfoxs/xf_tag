@@ -91,7 +91,7 @@ def gen_sub_file(res, file_name, topn=2):
 
     if file_name:
         res.index.name = 'id'
-        sub_file = f'./output/sub/{oof_prefix}_{file_name}'
+        sub_file = f'./output/sub/{file_name}'
         res[['label1', 'label2']].to_csv(sub_file)
         logger.info(f'Sub file save to :{sub_file}')
 
@@ -152,14 +152,14 @@ def get_best_weight(file):
 
 if __name__== '__main__':
     from core.ensemble import *
-    for top in [2, 3]:
-        for weight in [ 0,  0.95, 1]:
+    for top in [1, 2]:
+        for weight in [ 0,  0.95]:
             with timed_bolck(f'Cal sub for top:{top}, weight:{weight:3.2f}'):
                 res = get_feature_oof(top, weight)
                 train = res.loc[res.label != '0']
                 score_list = accuracy(train)
                 total = score_list[1]
-                file_name = f'mean_top{top}_{int(weight * 100):03}_{int(total*10**6):06}.csv'
+                file_name = f'{oof_prefix}_mean_top{top}_{int(weight * 100):03}_{int(total*10**6):06}.csv'
                 res = gen_sub_file(res.loc[res.label == '0'], file_name)
                 #logger.info(f'Sub file save to:{file_name}')
 

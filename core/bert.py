@@ -253,7 +253,10 @@ class Cal_acc(Callback):
         top_score = self._get_top_score(self.fold)[:top_cnt]
         self.threshold = top_score[-1] if len(top_score) == top_cnt else 0
         logger.info(f'The top#{top_cnt} score for max_bin:{get_args().max_bin}, epoch:{epoch}, oof:{oof_prefix}, fold#{self.fold} is:{top_score}, cur_score:{total}, threshold:{self.threshold}')
-        if ( round(total,4) > round(self.threshold,4) and epoch>=1 and total > self.max_score) or (get_args().frac<=0.1):
+        if ( round(total,4) > round(self.threshold,4)
+             and (epoch>=1 or self.threshold > 0 )
+             and total > self.max_score
+            ) :
             #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
             self.gen_file=True
             grow = max(self.score_list) - self.threshold
@@ -264,7 +267,7 @@ class Cal_acc(Callback):
             oof_file = f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val):05}_b{get_args().max_bin}_e{epoch}_m{min_len_ratio:2.1f}_L{SEQ_LEN:03}_w{self.window}.h5'
             self.save_stack_feature(val, test, oof_file)
         else:
-            logger.info(f'Epoch:{epoch}, only gen sub file if the local score >{self.threshold}, current score:{total}')
+            logger.info(f'Epoch:{epoch}, only gen sub file if the local score >{self.threshold}, current score:{total}, threshold:{self.threshold}, max_score:{self.max_score}')
 
         self.max_score = max(self.max_score, total)
 
