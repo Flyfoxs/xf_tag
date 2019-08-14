@@ -667,7 +667,7 @@ def get_feature_lda(n_topics):
     return pd.DataFrame(docres, columns=[f'fea_lda_{i}' for i in range(n_topics)], index=data.app_id)
 
 
-
+@lru_cache()
 def get_args():
     parser = argparse.ArgumentParser()
     # parser.set_defaults(func=test_abc)
@@ -676,7 +676,7 @@ def get_args():
     parser.add_argument("--fold", type=int, default=0, help="Split fold")
     parser.add_argument("--max_bin", type=int, default=randrange(0, 4), help="How many bin need to train")
     parser.add_argument("--min_len_ratio", type=float, default=0.8, help="The generated sample seq less than min_len will be drop")
-    parser.add_argument("--epochs", type=int, default=randrange(2, 4), help="How many epoch is need, default is 2 or 3")
+    parser.add_argument("--epochs", type=int, default=randrange(2, 3), help="How many epoch is need, default is 2 or 3")
     parser.add_argument("--frac", type=float, default=1.0, help="How many sample will pick")
     parser.add_argument("--window", type=int, default=SEQ_LEN-2, help="Rolling to gen sample for training")
     parser.add_argument("--cut_ratio", type=float, default=0.1, help="Reduce the end of the desc")

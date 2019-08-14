@@ -96,7 +96,7 @@ def train_base():
     fold = args.fold
     EPOCHS = args.epochs
 
-    BATCH_SIZE = 128
+
     LR = 1e-4
 
     with timed_bolck(f'Prepare train data#{BATCH_SIZE}'):
@@ -165,7 +165,7 @@ def train_base():
         with tf.keras.utils.custom_object_scope(get_custom_objects()):
             his = model.fit([input1, input2], train_y,
                             validation_data = ([val_x.loc[:, input1_col], np.zeros_like(val_x.loc[:, input1_col])], val_y),
-                            epochs=EPOCHS,  shuffle=True, batch_size=64,
+                            epochs=EPOCHS,  shuffle=True, batch_size=BATCH_SIZE,
                             callbacks=[Cal_acc( val_x, y.iloc[test_idx] )]
                       #steps_per_epoch=1000, validation_steps=10
                       )

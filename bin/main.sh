@@ -10,8 +10,8 @@ for i in $(seq 0 ${1:-100})
 do
     for fold in {0..4};
     do
-        python -u ./core/bert.py --max_bin=1 --fold=${fold} train_base  >> bin_1_fold_${fold}_"$(hostname)".log 2>&1
-        python -u ./core/bert.py --max_bin=2 --fold=${fold} train_base  >> bin_2_fold_${fold}_"$(hostname)".log 2>&1
+        python -u ./core/bert.py --fold=${fold} train_base  >> fold_${fold}_"$(hostname)".log 2>&1
+
     done
 done
 

@@ -13,13 +13,14 @@ word2vec_tx_mini = './input/mini_tx.kv'
 
 num_classes = 126  #get_label_id()
 
-oof_prefix = 'v21'
+oof_prefix = 'v23'
 
 
 bert_wv = "./input/bert.kv"
 ####Bert Config
 import os
-SEQ_LEN=128#-randrange(0, 5)*8
+SEQ_LEN= 128  #randrange(128, 180) #-randrange(0, 5)*8
+BATCH_SIZE = 64
 pretrained_path = './input/model/chinese_L-12_H-768_A-12'
 #pretrained_path = './input/model/chinese_wwm_ext_L-12_H-768_A-12'
 config_path = os.path.join(pretrained_path, 'bert_config.json')
