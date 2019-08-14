@@ -15,6 +15,9 @@ import os
 
 os.environ['TF_KERAS'] = '1'
 
+oof_prefix = get_args().version
+SEQ_LEN = 128  #randrange(128, 180) #-randrange(0, 5)*8
+BATCH_SIZE = get_args().batch_size
 
 #Batch size, MAX_len+ex_length, Manual, Manual GP feature cnt, frac
 @lru_cache()
@@ -184,7 +187,6 @@ class Cal_acc(Callback):
         self.min_len = int(SEQ_LEN*get_args().min_len_ratio)
         self.max_bin = get_args().max_bin
         self.fold = get_args().fold
-        self.window = get_args().window
         self.threshold = 0
         self.feature_len = self.val_x.shape[1]
 
@@ -264,7 +266,7 @@ class Cal_acc(Callback):
             test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}_f{self.fold}')
             len_raw_val = len(val.loc[val.bin == 0])
             min_len_ratio = get_args().min_len_ratio
-            oof_file = f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val):05}_b{get_args().max_bin}_e{epoch}_m{min_len_ratio:2.1f}_L{SEQ_LEN:03}_w{self.window}.h5'
+            oof_file = f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val):05}_b{get_args().max_bin}_e{epoch}_m{min_len_ratio:2.1f}_L{SEQ_LEN:03}.h5'
             self.save_stack_feature(val, test, oof_file)
         else:
             logger.info(f'Epoch:{epoch}, only gen sub file if the local score >{self.threshold}, current score:{total}, threshold:{self.threshold}, max_score:{self.max_score}')

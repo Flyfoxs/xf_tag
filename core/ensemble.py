@@ -16,9 +16,9 @@ static_list = [
 # './output/stacking/v6_4_0.766215_6977_06977_b0_e1_m20.h5',
 ]
 @lru_cache()
-def get_top_file(fold):
+def get_top_file(fold,version):
     from glob import glob
-    file_list = sorted(glob(f'./output/stacking/{oof_prefix}_{fold}_*.h5'), reverse=True)
+    file_list = sorted(glob(f'./output/stacking/{version}_{fold}_*.h5'), reverse=True)
 
     if static_list:
         file_list = [ file for file in file_list if file in static_list]
@@ -26,10 +26,10 @@ def get_top_file(fold):
 
 @lru_cache()
 @timed()
-def get_feature_oof(top=2, weight=1):
+def get_feature_oof(version, top=2, weight=1):
     file_list = []
     for fold in range(5):
-        tmp = get_top_file(fold)
+        tmp = get_top_file(fold, version)
         if len(tmp) < top:
             raise Exception(f'At least need {top} files for fold:{fold}')
         file_list = file_list + tmp[:top]
@@ -149,29 +149,34 @@ def get_best_weight(file):
     logger.info(f'====best_weight:{best_weight:3.2}, best_score:{best_score:6.5f}/{grow:6.5f}')
     return best_weight
 
-
-if __name__== '__main__':
-    from core.ensemble import *
-    for top in [1,2]:
-        for weight in [ 0,  0.95]:
-            with timed_bolck(f'Cal sub for top:{top}, weight:{weight:3.2f}'):
-                res = get_feature_oof(top, weight)
-
+def main():
+    for top in [1, 2]:
+        for weight in [0]:
+            version = get_args().version
+            with timed_bolck(f'Cal sub for top:{top}, weight:{weight:3.2f}, version:{version}'):
+                res = get_feature_oof(version, top, weight)
                 train = res.loc[res.label != '0']
                 score_list = accuracy(train)
                 total = score_list[1]
 
-                res.to_csv(f'./output/{oof_prefix}_ex_change_file_top{top}_w{weight}_{int(total*10**6):06}.csv')
-                file_name = f'{oof_prefix}_mean_top{top}_{int(weight * 100):03}_{int(total*10**6):06}.csv'
+                res.to_csv(f'./output/{version}_ex_change_file_top{top}_w{weight}_{int(total * 10 ** 6):06}.csv')
+                file_name = f'{version}_mean_top{top}_{int(weight * 100):03}_{int(total * 10 ** 6):06}.csv'
                 res = gen_sub_file(res.loc[res.label == '0'], file_name)
-                #logger.info(f'Sub file save to:{file_name}')
+                # logger.info(f'Sub file save to:{file_name}')
 
 
+if __name__== '__main__':
+    FUNCTION_MAP = {'main': main,  }
+
+    args = get_args()
+
+    func = FUNCTION_MAP[args.command]
+    func()
 
 
 
 """
-nohup python -u ./core/ensemble.py >> ensemble.log 2>&1 &
+nohup python -u ./core/ensemble.py  main  >> ensemble.log 2>&1 &
 """
 
 
