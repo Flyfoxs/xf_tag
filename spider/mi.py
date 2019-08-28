@@ -47,7 +47,7 @@ def get_data_from_wdj(name):
         response = requests.get(url2)
         tree = html.fromstring(response.content)
 
-        desc = tree.xpath('/html/body/div[2]/div[2]/div[2]/div[1]/div[4]/div/div[1]/text()')
+        desc = tree.xpath('/html/body/div[2]/div[2]/div[2]/div[1]/div/div/div[1]/text()')
         desc = ''.join(desc) if len(desc) > 0 else 'No desc'
 
         dp = tree.xpath('/html/body/div[2]/div[2]/div[2]/div[1]/div[1]/div/text()')  # [0]
