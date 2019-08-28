@@ -99,10 +99,12 @@ res_list = []
 
 import os
 if os.path.exists(file):
-    exist_list = pd.read_hdf(file, 'wdj').apply(lambda row: row.to_dict(),  axis=1)
+    good_df = pd.read_hdf(file, 'wdj')
+    good_df = good_df.loc[~((good_df.desc=='No desc') | pd.isna(good_df.desc))]
+    exist_list = good_df.apply(lambda row: row.to_dict(),  axis=1)
     print(f'Already get {len(exist_list)} rows')
     res_list.extend(exist_list)
-    name_exist =  pd.read_hdf(file, 'wdj').name.to_list()
+    name_exist = good_df.name.to_list()
     name_list = df.loc[~df.name.isin(name_exist)].name.sort_values().drop_duplicates().to_list()
 else:
     name_list = df.name.sort_values().drop_duplicates().to_list()
