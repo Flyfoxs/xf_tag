@@ -59,11 +59,12 @@ def get_data_from_wdj(name):
 
         closed_ids = tree.xpath('/html/body/div[2]/div[2]/div[2]/div[2]/div[3]/ol/li[*]/a[1]')  # [0]
 
-        match_name = tree.xpath('/html/body/div[2]/div[2]/div[1]/div[2]/div[1]/p/span/text()')[0]
+        match_name = tree.xpath('/html/body/div[2]/div[2]/div[1]//div/p/span[@itemprop="name"]/text()')[0]
 
         cat_list = tree.xpath('/html/body/div[2]/div[2]/div[2]/div[2]/div[1]/dl/dd[2]/a/text()')
         tag_list = tree.xpath('/html/body/div[2]/div[2]/div[2]/div[2]/div[1]/dl/dd[3]/div/div/a/text()')
         closed_ids = [item.get('href').split('/')[-1] for item in closed_ids]
+        path = tree.xpath('/html/body/div[2]/div[1]/div[2]//span[@itemprop="title"]/text()')[0]
 
         wd_id = url2.split('/')[-1]
         res = {
@@ -73,6 +74,7 @@ def get_data_from_wdj(name):
             'tag_list': ','.join(tag_list),
             'cat_list': ','.join(cat_list),
             'closed_ids': ','.join(closed_ids),
+            'path':path,
             'desc': desc,
             'dp': dp.strip().replace('\t', ''),  # 点评
             'ct':pd.to_datetime('now'),
@@ -121,20 +123,21 @@ print(len(name_list))
 
 def process_name_list(name_list):
     import threading
-    thread_name =  threading.currentThread().getName()
+    #thread_name =  threading.currentThread().getName()
     pid = os.getpid()
+    local_list = res_list.copy()
     print(f'\nThere are {len(name_list)} need to process for this batch#{pid}\n')
     file = f'./output/spider/wdj_{time()}.h5'
-    for sn, name in enumerate(tqdm(name_list)):
+    for sn, name in enumerate(tqdm(name_list, desc=f'Process#{pid}')):
         res = get_data_from_wdj(name)
-        res_list.append(res)
+        local_list.append(res)
         if sn % 100 == 99:
-            print(f'{len(res_list)} rows save to file,  sn:{sn}')
-            pd.DataFrame(res_list).to_hdf(file, 'wdj', mode='w')
+            print(f'{len(local_list)} rows save to file,  sn:{sn}')
+            pd.DataFrame(local_list).to_hdf(file, 'wdj', mode='w')
 
-    pd.DataFrame(res_list).to_hdf(file, 'wdj',mode='w')
+    pd.DataFrame(local_list).to_hdf(file, 'wdj',mode='w')
 
-    print(f'{len(res_list)} res save to file:{file}')
+    print(f'{len(local_list)} res save to file:{file}')
 
 
 
@@ -145,16 +148,20 @@ from multiprocessing import Process
 
 if __name__ == '__main__':
     name_list_len = len(name_list)
-    p = Process(target=process_name_list, args=(name_list[:name_list_len//2],), name='p1')
-    p.start()
+    thread_num = 10
+    step = name_list_len//thread_num
+    for partition_sn in range(thread_num):
+        begin , end = step*partition_sn, step*(partition_sn+1)
+        if partition_sn ==thread_num-1:
+            end =  name_list_len
+        print(f'\nthread:{partition_sn}, begin:{begin},end:{end}, total:{name_list_len}')
+        p = Process(target=process_name_list, args=(name_list[begin:end],), name=f'p{partition_sn}')
+        p.start()
 
-    p = Process(target=process_name_list, args=(name_list[name_list_len//2:], ),name='p2')
-    p.start()
-
-    p.join()
 
 
 
 """"
 http://so.cr173.com/search/d/%E5%BE%AE%E4%BF%A1_all_rank.html
+https://www.baidu.com/s?wd=埃达之光%20安卓
 """
