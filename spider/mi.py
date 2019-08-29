@@ -39,6 +39,7 @@ def get_data_from_wdj(name):
         from requests.utils import quote
         name_new = quote(name)
         url = f'https://www.wandoujia.com/search?key={name_new}&source=index'
+        url2 = None
         response = requests.get(url)
         tree = html.fromstring(response.content)
         link = tree.xpath('//*[@id="j-search-list"]/li[2]/a')[0]
@@ -47,10 +48,13 @@ def get_data_from_wdj(name):
         response = requests.get(url2)
         tree = html.fromstring(response.content)
 
-        desc = tree.xpath('/html/body/div[2]/div[2]/div[2]/div[1]/div/div/div[1]/*/text()')
+        desc = tree.xpath('/html/body/div[2]/div[2]/div[2]/div/*/div[@itemprop="description"]//text()')
         desc = ''.join(desc) if len(desc) > 0 else 'No desc'
+        desc = desc.replace('\t', '')
+        desc = desc.replace('\r', '')
+        desc = desc.replace('\n', '')
 
-        dp = tree.xpath('/html/body/div[2]/div[2]/div[2]/div[1]/div[1]/div/text()')  # [0]
+        dp = tree.xpath('/html/body/div[2]/div[2]/div[2]//div[@class="editorComment"]/div[@class="con"]/text()')
         dp = dp[0] if len(dp) > 0 else 'No desc'
 
         closed_ids = tree.xpath('/html/body/div[2]/div[2]/div[2]/div[2]/div[3]/ol/li[*]/a[1]')  # [0]
@@ -69,16 +73,17 @@ def get_data_from_wdj(name):
             'tag_list': ','.join(tag_list),
             'cat_list': ','.join(cat_list),
             'closed_ids': ','.join(closed_ids),
-            'desc': desc.replace('\t', ''),
+            'desc': desc,
             'dp': dp.strip().replace('\t', ''),  # 点评
             'ct':pd.to_datetime('now'),
+            'source':'wdj'
 
         }
 
         #print(res)
 
     except Exception as e:
-        print(name, url)
+        print(name, url2 or url)
         print(e)
         res = {'name': name,'ct':pd.to_datetime('now'), }
     return res
@@ -94,13 +99,16 @@ df = pd.concat([df1, df2])
 from time import time
 from tqdm import tqdm
 
-file = './output/wdj.h5'
+
 res_list = []
 
 import os
-if os.path.exists(file):
-    good_df = pd.read_hdf(file, 'wdj')
-    good_df = good_df.loc[~((good_df.desc=='No desc') | pd.isna(good_df.desc))]
+from glob import glob
+good_df = pd.concat([pd.read_hdf(file, 'wdj') for file in glob('./output/spider/*.h5')])
+
+if len(good_df)>0:
+    good_df = good_df.drop_duplicates('name')
+    #good_df = good_df.loc[~((good_df.desc=='No desc') | pd.isna(good_df.desc))]
     exist_list = good_df.apply(lambda row: row.to_dict(),  axis=1)
     print(f'Already get {len(exist_list)} rows')
     res_list.extend(exist_list)
@@ -109,13 +117,44 @@ if os.path.exists(file):
 else:
     name_list = df.name.sort_values().drop_duplicates().to_list()
 print(len(name_list))
-for sn, name in enumerate(tqdm(name_list)):
-    res = get_data_from_wdj(name)
-    res_list.append(res)
-    if sn % 5 == 4 :
-        print(f'{len(res_list)} rows save to file,  sn:{sn}')
-        pd.DataFrame(res_list).to_hdf(file, 'wdj', mode='w')
 
-pd.DataFrame(res_list).to_hdf(file, 'wdj')
 
-print(f'{len(res_list)} res save to file:{file}')
+def process_name_list(name_list):
+    import threading
+    thread_name =  threading.currentThread().getName()
+    pid = os.getpid()
+    print(f'\nThere are {len(name_list)} need to process for this batch#{pid}\n')
+    file = f'./output/spider/wdj_{time()}.h5'
+    for sn, name in enumerate(tqdm(name_list)):
+        res = get_data_from_wdj(name)
+        res_list.append(res)
+        if sn % 100 == 99:
+            print(f'{len(res_list)} rows save to file,  sn:{sn}')
+            pd.DataFrame(res_list).to_hdf(file, 'wdj', mode='w')
+
+    pd.DataFrame(res_list).to_hdf(file, 'wdj',mode='w')
+
+    print(f'{len(res_list)} res save to file:{file}')
+
+
+
+
+from multiprocessing import Process
+
+
+
+if __name__ == '__main__':
+    name_list_len = len(name_list)
+    p = Process(target=process_name_list, args=(name_list[:name_list_len//2],), name='p1')
+    p.start()
+
+    p = Process(target=process_name_list, args=(name_list[name_list_len//2:], ),name='p2')
+    p.start()
+
+    p.join()
+
+
+
+""""
+http://so.cr173.com/search/d/%E5%BE%AE%E4%BF%A1_all_rank.html
+"""
