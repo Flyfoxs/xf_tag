@@ -75,6 +75,9 @@ def get_raw_data():
     apptype_test['app_id_ex'] = apptype_test.app_id
 
     data = pd.concat([apptype_test, apptype_train], axis=0)
+    from spider.mi import filter_desc
+    data.app_des = data.app_des.apply(lambda val: filter_desc(val))
+
     data = pd.merge(data, apptype, on='type_id', how='left')
 
     data['len_'] = data.app_des.apply(lambda val: len(val))
@@ -325,7 +328,7 @@ def load_embedding_gensim(path_txt):
 
 
 @timed()
-def accuracy(res, topn=2):
+def accuracy(res, topn=2, msg=''):
 
     if res is None or len(res) == 0:
         raise Exception(f'input is none')
@@ -343,7 +346,7 @@ def accuracy(res, topn=2):
     # logger.info(f'Y=\n{y.head()}')
 
     res_list = np.zeros(topn)
-    for i in tqdm(range(1, topn + 1, 1), desc=f'cal acc for label(+)'):
+    for i in tqdm(range(1, topn + 1, 1), desc=f'cal acc#{len(res)} for label(+),{msg}'):
         res[f'label{i}'] = res.loc[:, id2label.values()].idxmax(axis=1)  # .values
         # Exclude top#1
 
@@ -352,7 +355,11 @@ def accuracy(res, topn=2):
             res.loc[index, col] = np.nan
         res_list[i - 1] = sum(res[f'label{i}'].values.astype(int) == y.values.astype(int)) / len(res)
 
-    return np.round(np.cumsum(res_list),4)
+    score = np.round(np.cumsum(res_list),4)
+    out_msg = f'\nBase on {res.shape} get {score}, msg:{msg}'
+    logger.info(out_msg)
+    #print(out_msg)
+    return score
 
 @timed()
 @file_cache()
@@ -576,23 +583,28 @@ def get_args():
 
     from random import randrange
 
-    parser.add_argument("--version", type=str, default='v24', help="version")
-    parser.add_argument("--fold", type=int, default=0, help="Split fold")
-    parser.add_argument("--max_bin", type=int, default=randrange(0, 4), help="How many bin need to train")
-    parser.add_argument("--min_len_ratio", type=float, default=0.8, help="The generated sample seq less than min_len will be drop")
-    parser.add_argument("--epochs", type=int, default=randrange(2, 3), help="How many epoch is need, default is 2 or 3")
-    parser.add_argument("--frac", type=float, default=1.0, help="How many sample will pick")
 
-    parser.add_argument("--seq_len", type=int, default=128, help="How many words for bert")
+    parser.add_argument("--fold", type=int, default=0, help="Split fold")
+    parser.add_argument("--max_bin", type=int, default=2, help="How many bin need to train")
+    parser.add_argument("--min_len_ratio", type=float, default=0.8, help="The generated sample seq less than min_len will be drop")
+    parser.add_argument("--epochs", type=int, default=16, help="How many epoch is need, default is 2 or 3")
+    parser.add_argument("--frac", type=float, default=1, help="How many sample will pick")
+
+
     #parser.add_argument("--window", type=int, default=local_seq_len-2, help="Rolling to gen sample for training")
     parser.add_argument("--cut_ratio", type=float, default=0.1, help="Reduce the end of the desc")
     parser.add_argument("--max_cut_num", type=int, default=30, help="Reduce the end of the desc")
 
+    parser.add_argument("--seq_len", type=int, default=128, help="How many words for bert")
     parser.add_argument("--batch_size", type=int, default=64, help="batch_size")
+    parser.add_argument("--version", type=str, default='v74', help="version")
+
+    parser.add_argument('--trial', type=int, default=0)
 
     parser.add_argument('command', type=str, default='cmd')
 
     args = parser.parse_args()
+    logger.info(f'Args===,{args}')
     return args
 
 
@@ -628,6 +640,7 @@ def get_feature_bert(seq_len):
 
     padding_analysis = bert.loc[:, f'bert_{seq_len-1}'].value_counts().sort_index()
     logger.info(f'padding_analysis(bert_{seq_len-1}):\n{padding_analysis}')
+    bert.index.name = 'index'
     return bert.sort_values(['app_id_ex_bin'], ascending=False)
 
 

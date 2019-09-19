@@ -1,22 +1,20 @@
-import sys
-import os
+
 from multiprocessing import Process
 
-from sklearn.model_selection import StratifiedKFold
 
 
-from tensorflow.python.keras.callbacks import Callback
+
 
 from core.feature import *
 from core.conf import *
-import keras
+
 import os
 
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 os.environ['TF_KERAS'] = '1'
 
 oof_prefix = get_args().version
-SEQ_LEN = 128  #randrange(128, 180) #-randrange(0, 5)*8
+SEQ_LEN = get_args().seq_len  #randrange(128, 180) #-randrange(0, 5)*8
 BATCH_SIZE = get_args().batch_size
 
 #Batch size, MAX_len+ex_length, Manual, Manual GP feature cnt, frac
@@ -44,10 +42,16 @@ def get_train_test_bert():
     labels = train_data.type_id.values.tolist()
     logger.info(f'Train Bin distribution:\n{train_data.bin.value_counts().sort_index()}')
 
-    test_data =  data.loc[pd.isna(data.type_id)].sample(frac=frac, random_state=2019)
-    logger.info(f'Test Bin distribution:\n{test_data.bin.value_counts().sort_index()}')
+    test_data =  data.loc[pd.isna(data.type_id)].sample(frac=1, random_state=2019)
 
-    logger.info(f'Train:{train_data.shape} Test:{test_data.shape}, frac:{frac}')
+    trial = get_args().trial
+    logger.info(f'Test Bin distribution#{trial}:\n{test_data.bin.value_counts().sort_index()}')
+
+    if trial > 0:
+        test_data = test_data.loc[test_data.index.str[-1]=='0']
+
+
+    logger.info(f'Train:{train_data.shape} Test#{trial}:{test_data.shape}, frac:{frac}')
 
     feature_col = [col for col in data.columns if col.startswith('fea_') or col.startswith('bert_')]
 
@@ -100,38 +104,41 @@ def train_base():
     EPOCHS = args.epochs
 
 
-    LR = 1e-4
+    LR = 2e-5
 
-    with timed_bolck(f'Prepare train data#{BATCH_SIZE}'):
+    with timed_bolck(f'Prepare train data#{BATCH_SIZE}, LR:{LR}'):
         X, y, _ = get_train_test_bert()
 
         ##Begin to define model
         from keras_bert import load_trained_model_from_checkpoint
 
         logger.info(f'Start to train base on checkpoint:{config_path}')
-        model = load_trained_model_from_checkpoint(config_path, checkpoint_path, training=True, seq_len=SEQ_LEN, )
-        model.summary(line_length=120)
+        bert_model = load_trained_model_from_checkpoint(config_path, checkpoint_path,  seq_len=SEQ_LEN, )
 
+        for l in bert_model.layers:
+            l.trainable = True
         from tensorflow.python import keras
-        from keras_bert import AdamWarmup, calc_train_steps
-        inputs = model.inputs[:2]
-        dense = model.get_layer('NSP-Dense').output
-        keras.models.Model(inputs, dense).summary()
+        #from keras_bert import  calc_train_steps
 
-        outputs = keras.layers.Dense(units=num_classes, activation='softmax')(dense)
+        x1_in = keras.layers.Input(shape=(None,))
+        x2_in = keras.layers.Input(shape=(None,))
 
-        decay_steps, warmup_steps = calc_train_steps(
-            y.shape[0],
-            batch_size=BATCH_SIZE,
-            epochs=EPOCHS,
-        )
+        x = bert_model([x1_in, x2_in])
 
-        model = keras.models.Model(inputs, outputs)
+        x = keras.layers.Lambda(lambda x: x[:, 0])(x)
+
+        p = keras.layers.Dense(num_classes, activation='sigmoid')(x)
+
+        #from keras import Model
+        model = keras.models.Model([x1_in, x2_in], p)
+
+
         model.compile(
-            AdamWarmup(decay_steps=decay_steps, warmup_steps=warmup_steps, lr=LR),
+            optimizer=keras.optimizers.Adam(lr=LR), # AdamWarmup(decay_steps=decay_steps, warmup_steps=warmup_steps, lr=LR),
             loss='categorical_crossentropy',
             metrics=['accuracy'],
         )
+        model.summary()
         ##End to define model
 
         input1_col = [col for col in X.columns if str(col).startswith('bert_')]
@@ -179,6 +186,7 @@ def train_base():
 
     return his
 
+from tensorflow.python.keras.callbacks import Callback
 class Cal_acc(Callback):
 
     def __init__(self, val_x, y):
@@ -189,10 +197,13 @@ class Cal_acc(Callback):
         self.fold = get_args().fold
         self.threshold = 0
         self.feature_len = self.val_x.shape[1]
+        self.cur_epoch = 0
+        self.version = get_args().version
+        self.trial = get_args().trial
 
         self.max_score = 0
 
-        self.score_list = np.zeros(3)
+        self.score_list = np.zeros(get_args().epochs)
         self.gen_file = False
 
         import time, os
@@ -209,11 +220,13 @@ class Cal_acc(Callback):
         input1_col = [col for col in self.val_x.columns if str(col).startswith('bert_')]
         #input2_col = [col for col in self.val_x.columns if str(col).startswith('fea_')]
         #model = self.model
-        val = self.model.predict([self.val_x.loc[:,input1_col], np.zeros_like(self.val_x.loc[:,input1_col])])
+        tmp_val = self.val_x.loc[:,input1_col]
+        tmp_y = self.y
+        val = self.model.predict([tmp_val, np.zeros_like(tmp_val)])
 
         label2id, id2label = get_label_id()
-        val = pd.DataFrame(val, columns=label2id.keys(), index=self.val_x.index)
-        val['label'] = self.y.astype(int).replace(id2label).astype(int)
+        val = pd.DataFrame(val, columns=label2id.keys(), index=tmp_val.index)
+        val['label'] = tmp_y.astype(int).replace(id2label).astype(int)
         val['bin'] = pd.Series(val.index).str[-1].values.astype(int)
         #logger.info(f'Head val#label:\n{val.label.head()}')
         res_val = val.copy()
@@ -222,11 +235,75 @@ class Cal_acc(Callback):
 
         num_labels = 10
         df_score = val.loc[val.bin==0]
-        score_list = accuracy(df_score, num_labels)
+        score_list = accuracy(df_score, num_labels, f'no{self.cur_epoch},b{self.max_bin},{self.version}')
 
         logger.info(f'{len(df_score)}/{len(res_val)}, fold:{self.fold}, score for label1-f{num_labels}:{score_list}')
 
         return score_list,res_val
+
+    @timed()
+    def cal_acc_ex(self):
+        input1_col = [col for col in self.val_x.columns if str(col).startswith('bert_')]
+
+        if self.trial==0:
+            check_type_list =['val']
+        for type_ in tqdm(check_type_list,desc='cal_acc_ex'):
+            tmp_val ,tmp_y = self.get_tmp_val_test(type_)
+            tmp_val = tmp_val.loc[:, input1_col]
+
+            val = self.model.predict([tmp_val, np.zeros_like(tmp_val)])
+
+            label2id, id2label = get_label_id()
+            val = pd.DataFrame(val, columns=label2id.keys(), index=tmp_val.index)
+            val['label'] = tmp_y.astype(int).replace(id2label).astype(int)
+            val['bin'] = pd.Series(val.index).str[-1].values.astype(int)
+            # logger.info(f'Head val#label:\n{val.label.head()}')
+            res_val = val.copy()
+            # res_val.to_pickle(f'./output/tmp_res_val.pkl')
+            # logger.info(f'Debug file: save to ./output/tmp_res_val.pkl')
+
+            num_labels = 10
+            df_score = val.loc[val.bin == 0]
+            score_list = accuracy(df_score, num_labels, f'ex{self.cur_epoch},{self.version},b{self.max_bin},{type_}')
+
+            logger.info(f'===cal_acc_ex{self.cur_epoch}:{type_}==={len(df_score)}/{len(res_val)}, fold:{self.fold}, score for label1-f{num_labels}:{score_list}')
+
+        return score_list, res_val
+
+
+    @lru_cache()
+    @timed()
+    def get_tmp_val_test(self, type_):
+        _, _, test_all = get_train_test_bert()
+
+        test = test_all.loc[pd.Series(test_all.index).str.startswith(type_).values]
+
+        test = test.loc[(pd.Series(test.index).str[-1]=='0').values]
+
+        logger.info(f'Split {type_}, {len(test)} rows from {len(test_all)}')
+
+        test=test.copy()
+        type_ = 'x'*6 + pd.Series(test.index).str[:6]
+        test.index = 'x'*6 + pd.Series(test.index).str[6:]
+
+        from spider.mi import get_train_ph2_index
+        train_ph2 =  get_train_ph2_index()
+        #final = final.loc[final.type_id.str.len() >= 1]
+        train_ph2.index = 'x'*6 + train_ph2['id'].str[6:]
+        #Align label with input test
+        index_old = test.index.copy()
+        test.index = pd.Series(test.index).apply(lambda val: val[:32])
+
+        label = train_ph2.type_id.loc[test.index.values].str[:6] #type_id len is 6
+
+        #Rollback index change
+        test.index = index_old
+        label.index = index_old
+
+        test = test.loc[pd.notna(label).values]
+        label = label.dropna()
+        print('test, label, type_', test.shape, label.shape, type_.shape)
+        return test, label#, type_
 
 
     def on_train_end(self, logs=None):
@@ -236,49 +313,45 @@ class Cal_acc(Callback):
         logger.info(f'Input args:{get_args()}')
 
     def on_epoch_end(self, epoch, logs=None):
+        self.cur_epoch = epoch
         print('\n')
-        score_list, val = self.cal_acc()
-        total = score_list[1]
-        self.score_list[epoch] =  round(total,6)
+        _, _ = self.cal_acc_ex()
 
-        # if total >= 0.65:
-        #     model_path = f'{self.model_folder}/model_{self.feature_len}_{total:6.5f}_{epoch}.h5'
-        #     weight_path = f'{self.model_folder}/weight_{self.feature_len}_{total:6.5f}_{epoch}.h5'
-        #
-        #     self.model.save_weights(weight_path)
-        #     self.model.save(model_path)
-        #     print(f'weight save to {model_path}')
-
-
-        #threshold_map = {0:0.785, 1:0.77, 2:0.77, 3:0.77, 4:0.78}
-        top_cnt =2
-        top_score = self._get_top_score(self.fold)[:top_cnt]
-        self.threshold = top_score[-1] if len(top_score) == top_cnt else 0
-        logger.info(f'The top#{top_cnt} score for max_bin:{get_args().max_bin}, epoch:{epoch}, oof:{oof_prefix}, fold#{self.fold} is:{top_score}, cur_score:{total}, threshold:{self.threshold}')
-        if ( round(total,4) > round(self.threshold,4)
-             and (epoch>=1 or self.threshold > 0 )
-             and total > self.max_score
-            ) :
-            #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
-            self.gen_file=True
-            grow = max(self.score_list) - self.threshold
-            logger.info(f'Fold:{self.fold}, epoch:{epoch}, MAX:{max(self.score_list):7.6f}/{grow:+6.5f}, threshold:{self.threshold}, score_list:{self.score_list}' )
-            test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}_f{self.fold}')
-            len_raw_val = len(val.loc[val.bin == 0])
-            min_len_ratio = get_args().min_len_ratio
-            oof_file = f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val):05}_b{get_args().max_bin}_e{epoch}_m{min_len_ratio:2.1f}_L{SEQ_LEN:03}.h5'
-            self.save_stack_feature(val, test, oof_file)
+        if self.trial > 0:
+            return 0
         else:
-            logger.info(f'Epoch:{epoch}, only gen sub file if the local score >{self.threshold}, current score:{total}, threshold:{self.threshold}, max_score:{self.max_score}')
+            score_list, val = self.cal_acc()
+            total = score_list[1]
 
-        self.max_score = max(self.max_score, total)
+            self.score_list[epoch] = round(total, 6)
+            #threshold_map = {0:0.785, 1:0.77, 2:0.77, 3:0.77, 4:0.78}
+            top_cnt =2
+            top_score = self._get_top_score(self.fold)[:top_cnt]
+            self.threshold = top_score[0] if len(top_score) >  0 else 0
+            logger.info(f'The top#{top_cnt} score for max_bin:{get_args().max_bin}, epoch:{epoch}, oof:{oof_prefix}, fold#{self.fold} is:{top_score}, cur_score:{total}, threshold:{self.threshold}')
+            if ( round(total,4) > round(self.threshold,4)
+                 and (epoch>=3 or self.threshold > 0 )
+                 and total > self.max_score
+                ) :
+                #logger.info(f'Try to gen sub file for local score:{total}, and save to:{model_path}')
+                self.gen_file=True
+                grow = max(self.score_list) - self.threshold
+                logger.info(f'Fold:{self.fold}, epoch:{epoch}, MAX:{max(self.score_list):7.6f}/{grow:+6.5f}, threshold:{self.threshold}, score_list:{self.score_list}' )
+                test = self.gen_sub(self.model, f'{self.feature_len}_{total:7.6f}_{epoch}_f{self.fold}')
+                len_raw_val = len(val.loc[val.bin == 0])
+                min_len_ratio = get_args().min_len_ratio
+                oof_file = f'./output/stacking/{oof_prefix}_{self.fold}_{total:7.6f}_{len_raw_val}_{len(val):05}_b{get_args().max_bin}_e{epoch}_{self.batch_id}_m{min_len_ratio:2.1f}_L{SEQ_LEN:03}.h5'
+                self.save_stack_feature(val, test, oof_file)
+            else:
+                logger.info(f'Epoch:{epoch}, only gen sub file if the local score >{self.threshold}, current score:{total}, threshold:{self.threshold}, max_score:{self.max_score}')
 
-        logger.info(f'Epoch#{epoch} END,max_bin:{get_args().max_bin}, oof:{oof_prefix}, max:{self.max_score:6.5f}, score:{score_list}, Fold:{self.fold},')
+            self.max_score = max(self.max_score, total, 0.82)
 
-        print('\n')
+            logger.info(f'Epoch#{epoch} END,max_bin:{get_args().max_bin}, oof:{oof_prefix}, max:{self.max_score:6.5f}, score:{score_list}, Fold:{self.fold},')
 
+            print('\n')
 
-        return round(total, 5)
+            return round(total, 5)
 
     @staticmethod
     @timed()
@@ -329,6 +402,7 @@ class Cal_acc(Callback):
 
             res_mean = res.copy(deep=True)
             res_mean['id'] = res_mean.id.apply(lambda val: val.split('_')[0])
+            res_mean.index.name = 'index'
             res_select = res_mean.groupby('id')['bin'].agg({'bin_max': 'max'})
             res_select.head()
             res_select = res_select.loc[res_select.bin_max == 3]
@@ -393,7 +467,6 @@ if __name__ == '__main__':
 """
 
 nohup python -u ./core/bert.py --frac=0.1  train_base  > test.log 2>&1 &
-
 
 nohup python -u ./core/bert.py --fold=4 --max_bin=2 train_base  > test_4.log 2>&1 &
 

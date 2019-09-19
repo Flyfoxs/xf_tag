@@ -1,15 +1,20 @@
-from keras_bert import Tokenizer
+import os
+import sys
 
-token_dict = {
-    '[CLS]': 0,
-    '[SEP]': 1,
-    'un': 2,
-    '##aff': 3,
-    '##able': 4,
-    '[UNK]': 5,
-}
-tokenizer = Tokenizer(token_dict)
-print(tokenizer.tokenize('unaffable'))  # The result should be `['[CLS]', 'un', '##aff', '##able', '[SEP]']`
-indices, segments = tokenizer.encode('unaffable')
-print(indices)  # Should be `[0, 2, 3, 4, 1]`
-print(segments)  # Should be `[0, 0, 0, 0, 0]`
+import numpy as np
+
+from keras_xlnet import Tokenizer, load_trained_model_from_checkpoint, ATTENTION_TYPE_BI
+
+
+
+'''Can be found at https://github.com/ymcui/Chinese-PreTrained-XLNet'''
+checkpoint_path = '/users/hdpsbp/HadoopDir/felix/xlnet'
+vocab_path = os.path.join(checkpoint_path, 'spiece.model')
+config_path = os.path.join(checkpoint_path, 'xlnet_config.json')
+model_path = os.path.join(checkpoint_path, 'xlnet_model.ckpt')
+
+# Tokenize inputs
+tokenizer = Tokenizer(vocab_path)
+text = "给岁月以文明"
+tokens = tokenizer.encode(text)
+
