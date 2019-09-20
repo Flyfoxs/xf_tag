@@ -1,1 +1,10 @@
-keras-bert
+keras-bert=0.57.1
+jieba
+deprecated
+urllib3
+file_cache
+tensorflow==1.11.0
+tensorflow-gpu==1.11.0
+keras==2.2.4
+tables
+

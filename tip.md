@@ -27,3 +27,46 @@ E2CC4670C695BFD41FC4ABFDE95C7B36   -102
 0C8C840A534F32D8A608F50D67663E83   -102
 D396674F43367C4FDEF82CDA78756D4F   -102
 1F0AF6FA7424660692173FF4134903CB   -102
+
+#Manual handle
+egrep dkplugin  input/0823/*
+
+
+no case for 140208
+
+grep 'com.android.iconnect' ./input/0823/*
+
+唐小僧
+
+WXEntryActivity
+
+辽宁和教育
+
+leak between test and train
+
+https://android.myapp.com/myapp/detail.htm?apkName=com.kiees.android
+vs
+https://android.myapp.com/myapp/detail.htm?apkName=com.kiess
+
+
+grep 百度手机助手 ./input/0823/*
+
+name first place
+
+name partially match
+
+融合,交叉数据源, 去除空格,大小写 一半a, 一半b
+
+
+
+ #ffababab       com.hisense.uifac
+ FACTORY MENU    com.hisense.uifac
+ 工厂菜单        com.hisense.uifac
+
+
+aiqianjin.jiea
+
+WXEntryActivity
+
+开心躲猫猫
+当妈模拟器

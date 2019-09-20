@@ -207,7 +207,7 @@ def compare(file='./output/sub/80000_v36_07_bt_True_mean_top2_000_865700.csv'):
     return df
 
 @timed()
-@file_cache(prefix='newx')
+@file_cache()
 def get_oof_version(version, top, weight):
 
 
@@ -219,7 +219,7 @@ def get_oof_version(version, top, weight):
             logger.info(f'File List {version} :{file_list}')
 
             res = get_feature_oof(file_list, weight, base_train)
-    res.iloc[:, :-1] = res.iloc[:, :-1].apply(lambda row: row / row.sum(), axis=1)
+
     return res#, len(file_list)
 
 @timed()
@@ -228,11 +228,23 @@ def main():
     file_cnt = 0
     top = 4
     weight = 0
+    oof_weight_list = []
     for version in ['v36', 'v43','v72','v73']:
         #version = get_args().version
+
         res = get_oof_version(version, top, weight)
-        #file_cnt += cnt
+        #Align all the porbiblity to 1
+
+
+        train = res.loc[res.label != '0']
+        score_list = accuracy(train)
+        #oof_weight_list.append((score_list[1]))
+        logger.info(f'Score for train{train.shape}/{res.shape}:{version}:{score_list}')
+
+        res.iloc[:, :-1] =  res.iloc[:, :-1].apply(lambda row: row / row.sum(), axis=1)
+
         oof_list.append(res)
+
 
     oof = pd.concat(oof_list)
 
@@ -241,6 +253,8 @@ def main():
     label_raw = oof_list[0].label#.drop_duplicates()
     print('oof, final before=', oof.shape)
     oof = oof.groupby(oof.index).mean()
+    #oof.iloc[:, :-1] = oof.iloc[:, :-1].apply(lambda row: row / row.sum(), axis=1)
+
     print('oof, final after=', oof.shape)
     oof['label'] = label_raw
 
@@ -253,10 +267,10 @@ def main():
     total = score_list[1]
     logger.info(f'get the final score:{total} base on train:{train.shape}')
 
-    ex_file = f'./output/{version}_bt__ex_change_file_top{top}_w{weight}_{int(total * 10 ** 6):06}.csv'
+    ex_file = f'./output/{version}_bt_change_file_top{top}_w{weight}_{int(total * 10 ** 6):06}.csv'
     res.to_csv(ex_file)
     logger.info(f'Exchange file save to:{ex_file}')
-    file_name = f'{version}_{file_cnt:02}_bt_mean_top{top}_{int(weight * 100):03}_{int(total * 10 ** 6):06}.csv'
+    file_name = f'{version}_{file_cnt:02}_new_mean_top{top}_{int(weight * 100):03}_{int(total * 10 ** 6):06}.csv'
     res = gen_sub_file(res.loc[res.label == '0'], file_name)
 
 
