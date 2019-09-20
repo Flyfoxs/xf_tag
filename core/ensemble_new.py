@@ -229,7 +229,7 @@ def main():
     top = 4
     weight = 0
     oof_weight_list = []
-    for version in ['v36', 'v43','v72','v73']:
+    for version, w in zip (['v36', 'v43','v72','v73','v74','v75'], [0.7 ,0.7,0.8,1,1,1 ] ):
         #version = get_args().version
 
         res = get_oof_version(version, top, weight)
@@ -237,11 +237,11 @@ def main():
 
 
         train = res.loc[res.label != '0']
-        score_list = accuracy(train)
-        #oof_weight_list.append((score_list[1]))
-        logger.info(f'Score for train{train.shape}/{res.shape}:{version}:{score_list}')
+        # score_list = accuracy(train)
+        # #oof_weight_list.append((score_list[1]))
+        # logger.info(f'Score for train{train.shape}/{res.shape}:{version}:{score_list}')
 
-        res.iloc[:, :-1] =  res.iloc[:, :-1].apply(lambda row: row / row.sum(), axis=1)
+        res.iloc[:, :-1] =  w * res.iloc[:, :-1].apply(lambda row: row / row.sum(), axis=1)
 
         oof_list.append(res)
 
@@ -286,7 +286,7 @@ if __name__== '__main__':
 
 
 """
-nohup python -u ./core/ensemble_new.py  main  >> ensemble_newx.log 2>&1 &
+nohup python -u ./core/ensemble_new.py  main  >> ensemble_final.log 2>&1 &
 """
 
 
