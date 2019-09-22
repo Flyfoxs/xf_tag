@@ -1,6 +1,7 @@
 
 # 数据的准备
 需要下载bert的预训练模型,然后在conf中修改对应的变量pretrained_path
+
 下载地址: https://docs.google.com/uc?export=download&id=1W3WgPJWGVKlU9wpUYsdZuurAIFKvrl_Y
 
 
