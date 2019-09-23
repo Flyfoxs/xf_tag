@@ -12,11 +12,11 @@
     pip install -r requirements.txt
    
 *   GPU的指定
-    
+
     修改bert.py中的如下代码
-    
+
     os.environ["CUDA_VISIBLE_DEVICES"] = "2"
-   
+
 *  OOF的生成: BERT
     
     以5折的方式运行程序,并且每一折都运行3次
@@ -117,7 +117,7 @@
 - 不同的切割序列
 
     不同模型,选择不同的seq_len,得到的不同结果,然后融合.
-    
+
 # 联系方式
 
     姓名: 李劳

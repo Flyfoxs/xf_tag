@@ -10,7 +10,7 @@ for i in $(seq 0 ${1:-100})
 do
     for fold in {0..4};
     do
-        python -u ./core/bert.py --fold=${fold} train_base  >> fold_${fold}_"$(hostname)".log 2>&1
+        python -u ./core/bert.py --fold=${fold} --batch_size=8 train_base  >> fold_${fold}_"$(hostname)".log 2>&1
 
     done
 done
