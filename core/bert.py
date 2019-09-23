@@ -10,7 +10,7 @@ from core.conf import *
 
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 os.environ['TF_KERAS'] = '1'
 
 oof_prefix = get_args().version

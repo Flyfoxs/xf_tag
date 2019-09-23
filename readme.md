@@ -6,9 +6,16 @@
 
 
 # 运行方式
+## 环境准备
 *  依赖包的安装
     
     pip install -r requirements.txt
+   
+*   GPU的指定
+    
+    修改bert.py中的如下代码
+    
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
    
 *  OOF的生成: BERT
     
