@@ -1,10 +1,14 @@
-keras-bert=0.57.1
+keras-bert==0.57.1
 jieba
 deprecated
 urllib3
 file_cache==0.1.36
-tensorflow==1.11.0
-tensorflow-gpu==1.11.0
 keras==2.2.4
 tables
+
+#tensorflow==1.11.0
+#tensorflow-gpu==1.11.0
+
+tensorflow==1.13.1
+tensorflow-gpu==1.13.1
 

@@ -5,6 +5,7 @@ cd ..
 ##for i in {1..10};
 #for i in $(seq 0 $1)
 
+export PYTHONPATH=./:$PYTHONPATH
 #if not input $1, default value is 100
 for i in $(seq 0 ${1:-100})
 do
