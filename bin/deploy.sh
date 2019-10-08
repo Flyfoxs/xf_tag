@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 cd "$(dirname "$0")"
 
-remote_host="hdpsbp@ai-prd-07"
-remote_dir="/users/hdpsbp/felix/"
+#remote_host="aladdin1@dgx"
+remote_host="aladdin1@$1"
+remote_dir="~/felix/"
 
 cd ..
 
-if [[ -z "$1" ]]; then
+if [[ -z "$2" ]]; then
     rsync -avz --exclude-from './bin/exclude.txt' $(pwd) $remote_host:$remote_dir
 else
     rsync -avz $(pwd) $remote_host:$remote_dir
@@ -14,7 +15,8 @@ fi
 
 date
 
-echo $remote_host:$remote_dir
+echo 'upload to:' $remote_host:$remote_dir
+echo '===================================='
 
 #rsync -av  ./output/0.70180553000.csv hdpsbp@ai-prd-07:/users/hdpsbp/felix/df_jf/output/
 
@@ -25,4 +27,3 @@ echo $remote_host:$remote_dir
 #rsync -av  ./input/tmp hdpsbp@ai-prd-07:/users/hdpsbp/felix/kdd_bd/input
 
 #rsync -av   ./output/sub/?.csv hdpsbp@ai-prd-07:/users/hdpsbp/felix/kdd_bd/output/sub
-
