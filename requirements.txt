@@ -9,6 +9,6 @@ tables
 #tensorflow==1.11.0
 #tensorflow-gpu==1.11.0
 
-tensorflow==1.13.1
+tensorflow==2.5.3
 tensorflow-gpu==1.13.1
 
